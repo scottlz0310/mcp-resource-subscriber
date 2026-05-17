@@ -30,6 +30,7 @@ export interface SubscribeProbeResult {
   initialText: string;
   notificationUri: string;
   finalText: string;
+  notificationCount: number;
   /**
    * How the probe completed:
    * - "subscription"     — received notifications/resources/updated, then re-read
@@ -44,6 +45,8 @@ export interface SubscribeProbeResult {
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
+const RESOURCE_UPDATED_METHOD = "notifications/resources/updated";
+const NON_TERMINAL_RECOMMENDED_ACTIONS = new Set(["POLL_AFTER"]);
 
 function getResourceText(result: Awaited<ReturnType<Client["readResource"]>>): string {
   const first = result.contents[0];
@@ -54,60 +57,143 @@ function getResourceText(result: Awaited<ReturnType<Client["readResource"]>>): s
   return first.text;
 }
 
-interface NotificationWaiter {
-  readonly promise: Promise<string>;
-  readonly cancel: () => void;
-  /** Set synchronously when the notification handler fires. Non-null means a
-   *  notification was received regardless of which code path awaits the promise. */
-  readonly receivedUri: string | null;
+interface ResourceUpdateEvent {
+  sequence: number;
+  uri: string;
 }
 
-function waitForUpdatedNotification(client: Client, uri: string, timeoutMs: number): NotificationWaiter {
-  let settled = false;
-  let receivedUri: string | null = null;
-  let timeout: NodeJS.Timeout;
+interface ResourceUpdateQueue {
+  readonly receivedCount: number;
+  readonly lastUri: string;
+  readonly waitAfter: (sequence: number, timeoutMs: number) => Promise<ResourceUpdateEvent>;
+  readonly cancel: () => void;
+}
 
-  const promise = new Promise<string>((resolve, reject) => {
-    timeout = setTimeout(() => {
-      settled = true;
-      reject(new Error(`Timed out waiting for resource update notification after ${timeoutMs} ms`));
-    }, timeoutMs);
+function createResourceUpdateQueue(client: Client, uri: string): ResourceUpdateQueue {
+  const events: ResourceUpdateEvent[] = [];
+  let receivedCount = 0;
+  let lastUri = "";
+  let pending: {
+    afterSequence: number;
+    resolve: (event: ResourceUpdateEvent) => void;
+    reject: (error: Error) => void;
+    timeout: NodeJS.Timeout;
+  } | null = null;
 
-    client.setNotificationHandler(ResourceUpdatedNotificationSchema, (notification) => {
-      if (settled) {
-        return;
-      }
-      if (notification.params.uri !== uri) {
-        return;
-      }
+  const findNextEvent = (sequence: number): ResourceUpdateEvent | undefined =>
+    events.find((event) => event.sequence > sequence);
 
-      settled = true;
-      clearTimeout(timeout);
-      receivedUri = notification.params.uri;
-      resolve(notification.params.uri);
-    });
+  client.setNotificationHandler(ResourceUpdatedNotificationSchema, (notification) => {
+    if (notification.params.uri !== uri) {
+      return;
+    }
+
+    receivedCount++;
+    lastUri = notification.params.uri;
+    const event = { sequence: receivedCount, uri: notification.params.uri };
+    events.push(event);
+
+    if (events.length > 100) {
+      events.shift();
+    }
+
+    if (pending && event.sequence > pending.afterSequence) {
+      const waiter = pending;
+      pending = null;
+      clearTimeout(waiter.timeout);
+      waiter.resolve(event);
+    }
   });
 
-  // Attach a no-op rejection handler so that if the timeout fires while the
-  // caller is in a non-awaiting code path (e.g., the pre-completion branch),
-  // Node.js does not report an unhandled promise rejection.
-  promise.catch(() => {});
-
   return {
-    promise,
-    // Getter so the caller reads the live value after awaiting readResource().
-    get receivedUri(): string | null {
-      return receivedUri;
+    get receivedCount(): number {
+      return receivedCount;
     },
-    cancel: () => {
-      if (settled) {
-        return;
+    get lastUri(): string {
+      return lastUri;
+    },
+    waitAfter: (sequence: number, timeoutMs: number): Promise<ResourceUpdateEvent> => {
+      const existing = findNextEvent(sequence);
+      if (existing) {
+        return Promise.resolve(existing);
       }
 
-      settled = true;
-      clearTimeout(timeout);
+      if (timeoutMs <= 0) {
+        return Promise.reject(new Error("Timed out waiting for resource update notification"));
+      }
+
+      return new Promise<ResourceUpdateEvent>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          if (pending?.reject === reject) {
+            pending = null;
+          }
+          reject(new Error(`Timed out waiting for resource update notification after ${timeoutMs} ms`));
+        }, timeoutMs);
+
+        pending = {
+          afterSequence: sequence,
+          resolve,
+          reject,
+          timeout,
+        };
+      });
+    },
+    cancel: () => {
+      if (pending) {
+        clearTimeout(pending.timeout);
+        pending = null;
+      }
+      client.removeNotificationHandler(RESOURCE_UPDATED_METHOD);
     },
   };
+}
+
+export function extractRecommendedAction(text: string): string | null {
+  const parsed = parseJson(text);
+  if (parsed !== null) {
+    const fromJson = findRecommendedAction(parsed);
+    if (fromJson) {
+      return fromJson;
+    }
+  }
+
+  const match =
+    text.match(/(?:^|[\s,{])recommended_next_action\s*[:=]\s*"?([^"\s,}]+)"?/m) ??
+    text.match(/"recommended_next_action"\s*:\s*"([^"]+)"/);
+  return match ? (match[1] ?? null) : null;
+}
+
+function parseJson(text: string): unknown | null {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function findRecommendedAction(value: unknown): string | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (typeof record.recommended_next_action === "string") {
+    return record.recommended_next_action;
+  }
+
+  for (const child of Object.values(record)) {
+    const action = findRecommendedAction(child);
+    if (action) {
+      return action;
+    }
+  }
+
+  return null;
+}
+
+function shouldWaitForNextUpdate(text: string): boolean {
+  const action = extractRecommendedAction(text);
+  return action !== null && NON_TERMINAL_RECOMMENDED_ACTIONS.has(action);
 }
 
 export async function runSubscribeProbe(options: SubscribeProbeOptions): Promise<SubscribeProbeResult> {
@@ -138,6 +224,7 @@ export async function runSubscribeProbe(options: SubscribeProbeOptions): Promise
           initialText: "",
           notificationUri: "",
           finalText: "",
+          notificationCount: 0,
           route: "timeout",
           subscribed: false,
           unsubscribed: false,
@@ -148,25 +235,30 @@ export async function runSubscribeProbe(options: SubscribeProbeOptions): Promise
 
     const initial = await client.readResource({ uri });
     const initialText = getResourceText(initial);
-    const notification = waitForUpdatedNotification(client, uri, timeoutMs);
+    const notifications = createResourceUpdateQueue(client, uri);
     let subscribed = false;
     let unsubscribed = false;
     let notificationUri = "";
+    let notificationSequence = 0;
     let finalText = "";
     let errorCode: string | null = null;
     let route: "subscription" | "pre-completion" | "timeout" = "timeout";
+    const deadlineMs = Date.now() + timeoutMs;
+
+    const remainingMs = (): number => Math.max(0, deadlineMs - Date.now());
 
     try {
       await client.subscribeResource({ uri });
       subscribed = true;
     } catch {
-      notification.cancel();
+      notifications.cancel();
       return {
         capabilities,
         resourceFound: true,
         initialText,
         notificationUri: "",
         finalText: "",
+        notificationCount: 0,
         route: "timeout",
         subscribed: false,
         unsubscribed: false,
@@ -175,28 +267,43 @@ export async function runSubscribeProbe(options: SubscribeProbeOptions): Promise
     }
 
     // Wrap all post-subscribe operations in a single try/finally so that
-    // notification.cancel() and unsubscribeResource() always run — even when
+    // notifications.cancel() and unsubscribeResource() always run — even when
     // the post-subscribe read (pre-completion check) or the final read throws.
     try {
+      const postSubscribeReadAfterSequence = notifications.receivedCount;
       // Immediately read once after subscribe to handle the pre-completion race condition:
       // if the resource was already updated before our subscription was established
       // (i.e., the notification fired before we subscribed), we will never receive
       // that notification. Comparing with initialText detects this window.
       const postSubscribeText = getResourceText(await client.readResource({ uri }));
+      notificationSequence = postSubscribeReadAfterSequence;
       if (postSubscribeText !== initialText) {
-        if (notification.receivedUri !== null) {
-          // Notification arrived during the post-subscribe read window.
-          // Prefer subscription route so the output accurately reflects that
-          // a notification was received rather than misreporting pre-completion.
+        finalText = postSubscribeText;
+        if (notifications.receivedCount > postSubscribeReadAfterSequence) {
           route = "subscription";
-          notificationUri = notification.receivedUri;
-        } else {
+          notificationUri = notifications.lastUri;
+        } else if (!shouldWaitForNextUpdate(finalText)) {
           route = "pre-completion";
         }
-        finalText = postSubscribeText;
+
+        while (shouldWaitForNextUpdate(finalText) && !errorCode) {
+          try {
+            const event = await notifications.waitAfter(notificationSequence, remainingMs());
+            notificationSequence = event.sequence;
+            notificationUri = event.uri;
+            route = "subscription";
+          } catch {
+            errorCode = "NOTIFICATION_TIMEOUT";
+            break;
+          }
+
+          finalText = getResourceText(await client.readResource({ uri }));
+        }
       } else {
         try {
-          notificationUri = await notification.promise;
+          const event = await notifications.waitAfter(notificationSequence, remainingMs());
+          notificationSequence = event.sequence;
+          notificationUri = event.uri;
           route = "subscription";
         } catch {
           errorCode = "NOTIFICATION_TIMEOUT";
@@ -204,10 +311,22 @@ export async function runSubscribeProbe(options: SubscribeProbeOptions): Promise
 
         if (route === "subscription") {
           finalText = getResourceText(await client.readResource({ uri }));
+          while (shouldWaitForNextUpdate(finalText) && !errorCode) {
+            try {
+              const event = await notifications.waitAfter(notificationSequence, remainingMs());
+              notificationSequence = event.sequence;
+              notificationUri = event.uri;
+            } catch {
+              errorCode = "NOTIFICATION_TIMEOUT";
+              break;
+            }
+
+            finalText = getResourceText(await client.readResource({ uri }));
+          }
         }
       }
     } finally {
-      notification.cancel();
+      notifications.cancel();
       try {
         await client.unsubscribeResource({ uri });
         unsubscribed = true;
@@ -222,6 +341,7 @@ export async function runSubscribeProbe(options: SubscribeProbeOptions): Promise
       initialText,
       notificationUri,
       finalText,
+      notificationCount: notifications.receivedCount,
       route,
       subscribed,
       unsubscribed,

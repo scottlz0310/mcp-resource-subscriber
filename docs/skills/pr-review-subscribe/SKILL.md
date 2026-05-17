@@ -173,9 +173,10 @@ pnpm dlx mcp-resource-subscriber \
      `route pre-completion` without waiting for a notification.
      This handles the race where Copilot finished before the probe subscribed.
    - Otherwise block until `notifications/resources/updated` is received
-   - Re-read the resource after notification
-   - Return `recommended_next_action`
-4. Parse the output and follow the same action table as 1S-B.
+   - 通知ごとに resource を再読込する
+   - `recommended_next_action=POLL_AFTER` の場合は同じ subscription を維持し、次の通知を待つ
+   - 非 `POLL_AFTER` action、timeout、error のいずれかに到達してから return する
+4. Parse the output and follow the same action table as 1S-B. wrapper の `exit 0` は transport 成功としてのみ扱う。final block が `recommended_next_action=READ_REVIEW_THREADS` の場合だけ Phase 2 に進む。
 
 Report the route as `sdk-wrapper subscription route` in the final summary.
 
