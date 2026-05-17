@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runSubscribeProbe } from "./probeClient.js";
+import { extractRecommendedAction, runSubscribeProbe } from "./probeClient.js";
 
 // Default URI for the bundled reference server
 const REVIEW_STATUS_URI = "test://review/status";
@@ -105,11 +105,6 @@ function parseOptions() {
   return { url, uri, timeoutMs, requestHeaders, skipResourceListCheck, authTokenFromFlag };
 }
 
-function extractRecommendedAction(text: string): string | null {
-  const match = text.match(/^recommended_next_action[: ]+(\S+)/m);
-  return match ? (match[1] ?? null) : null;
-}
-
 function printResult(result: Awaited<ReturnType<typeof runSubscribeProbe>>, url: string, uri: string): void {
   console.log(`capabilities ${JSON.stringify(result.capabilities)}`);
   console.log(`resource-found ${result.resourceFound}`);
@@ -122,6 +117,7 @@ function printResult(result: Awaited<ReturnType<typeof runSubscribeProbe>>, url:
   console.log(`route ${result.route}`);
   console.log(`subscribed ${result.subscribed}`);
   console.log(`notification-received ${result.route === "subscription"}`);
+  console.log(`notification-count ${result.notificationCount}`);
   console.log(`unsubscribed ${result.unsubscribed}`);
   const recommendedAction = extractRecommendedAction(result.finalText);
   if (recommendedAction) {

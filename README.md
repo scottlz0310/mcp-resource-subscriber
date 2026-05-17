@@ -1,6 +1,6 @@
 # mcp-resource-subscriber
 
-CLI probe for MCP `resources/subscribe` — connects to any MCP Streamable HTTP server, subscribes to a resource, receives the live update notification, and re-reads the updated content.
+CLI probe for MCP `resources/subscribe` — connects to any MCP Streamable HTTP server, subscribes to a resource, receives live update notifications, and re-reads updated content.
 
 ---
 
@@ -83,6 +83,7 @@ initial
 route subscription
 subscribed true
 notification-received true
+notification-count 1
 unsubscribed true
 recommended_next_action READ_REVIEW_THREADS
 error-code null
@@ -93,6 +94,8 @@ phase-summary route=subscription url=<url> uri=<uri>
 ```
 
 > **Note**: `recommended_next_action` is only emitted when the final resource text contains it (e.g., from `copilot-review-mcp`). It is omitted for the bundled test server.
+
+`recommended_next_action=POLL_AFTER` は非終端状態として扱われます。この場合、CLI は exit せず、同じ購読を維持したまま次の `notifications/resources/updated` を待ちます。`--timeout-ms` は subscribe 後の全体待機上限です。
 
 On failure:
 

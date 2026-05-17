@@ -131,7 +131,8 @@ The wrapper must:
 1. Connect to the MCP server.
 2. Subscribe to the watch resource.
 3. Wait for `notifications/resources/updated`.
-4. Read the same resource after notification.
-5. Return the parsed `recommended_next_action`.
-6. Unsubscribe/close on completion or timeout.
+4. 通知ごとに同じ resource を再読込する。
+5. `recommended_next_action=POLL_AFTER` の場合は subscription を維持し、次の通知を待つ。
+6. 非 `POLL_AFTER` action、timeout、error のいずれかに到達してから parsed `recommended_next_action` を返す。
+7. Unsubscribe/close on completion or timeout.
 
