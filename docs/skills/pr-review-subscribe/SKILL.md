@@ -34,6 +34,7 @@ Minimum required operations:
 - `{CRM}:reply_and_resolve_review_thread`
 - `{CRM}:get_pr_review_cycle_status`
 - `{GH}:add_issue_comment`
+- `{GH}:create_issue` (required for Phase 5 scope-out / deferred reject follow-up tracking)
 - `{RSRC}:resources/subscribe` equivalent for the watch resource
 - `{RSRC}:resources/read` equivalent for the watch resource
 - `{RSRC}:resources/unsubscribe` equivalent for the watch resource
@@ -262,12 +263,27 @@ Classify each unresolved comment:
 
 Decide `accept` or `reject` autonomously. Reject only with a concrete reason such as out of scope, already handled, invalid premise, or intentionally deferred.
 
+**Reject constraint — scope-out / deferred requires tracking issue.**
+A reject whose reason is `out-of-scope`, `deferred`, or `follow-up` (i.e., the item is acknowledged as valid but will be handled later) is NOT complete until it is traceable to a follow-up issue. For these reject reasons, the `Follow-up issue` column below MUST be filled with a valid issue number that actually covers the item. See Phase 5 for issue creation / linking rules.
+
+Reject reasons that do NOT require a follow-up issue:
+
+- `already-handled` — the item is already addressed in this PR or elsewhere; cite the commit / PR / issue.
+- `invalid-premise` — the comment is based on a misunderstanding; explain why.
+- `wont-fix` — an explicit decision not to address it; explain why. Must NOT say "will handle later" or "deferred to another issue".
+
 Show this table before editing:
 
 ```text
-| # | Thread ID | Class | Decision | Summary | Reject reason |
-|---|-----------|-------|----------|---------|---------------|
+| # | Thread ID | Class | Decision | Summary | Reject reason | Follow-up issue |
+|---|-----------|-------|----------|---------|---------------|-----------------|
 ```
+
+`Follow-up issue` column rules:
+
+- `accept` rows: leave blank or `N/A`.
+- `reject` rows with reason `out-of-scope` / `deferred` / `follow-up`: MUST contain `#<number>` of an issue that actually covers the item. Blank or `TBD` is not allowed at this stage — defer Phase 5 instead (see Phase 5 step 4).
+- `reject` rows with reason `already-handled` / `invalid-premise` / `wont-fix`: leave blank or `N/A`.
 
 Choose `fix_type` for Phase 6:
 
@@ -294,8 +310,44 @@ Do not revert unrelated user changes.
 For every reviewed thread, call `{CRM}:reply_and_resolve_review_thread`.
 
 - Fixed: mention the commit and concrete fix.
-- Rejected: explain the reason.
-- Always set `resolve=true` unless the tool or platform prevents resolution.
+- Rejected: explain the reason. See the reject sub-rules below.
+- Always set `resolve=true` unless the tool or platform prevents resolution, or unless step 4 below requires the thread to stay open.
+
+### Reject reply rules
+
+A scope-out reject is not complete until it is traceable. If the reply says the item will be handled later, the reply MUST include a valid follow-up issue number that actually covers that item. Do not resolve the thread with a vague "out of scope" or "will handle later" statement without creating or linking the tracking issue.
+
+#### 1. Linking an existing issue
+
+When an existing issue already covers the item:
+
+- Include `Tracked by #xxx` or `Follow-up: #xxx` in the reply body.
+- Confirm the linked issue's title / description actually covers the rejected comment's substance. Do NOT reuse an issue that was opened for a different purpose just because it touches the same file or component.
+  - Bad example: linking a "show latest-version banner" issue as the follow-up for a "missing tests" or "accessibility" comment.
+- If no existing issue covers the item, go to step 2 instead.
+
+#### 2. Creating a new follow-up issue
+
+When no existing issue covers the item, create one before (or within the same Phase 5 as) resolving the thread:
+
+1. Call `{GH}:create_issue` with a title and body that clearly describe the deferred work and reference the originating PR / thread.
+2. Capture the new issue number.
+3. Include `Follow-up: #<new-number>` in the reply.
+4. Record the issue number in the Phase 3 decision table (`Follow-up issue` column) and carry it into the Phase 7 Summary `Deferred / Scope-out Items` list.
+
+#### 3. Explicit `Won't fix`
+
+If the decision is to truly not address the item:
+
+- Reply with `Won't fix` and a concrete reason (e.g., "conflicts with intended behavior", "out of project scope", "would regress X").
+- Do NOT write phrases like "will handle later", "deferred to another issue", or "follow-up coming" — those imply tracked work and require step 1 or 2 instead.
+
+#### 4. When issue creation or linking is not possible
+
+If a follow-up issue cannot be created or confirmed in this cycle (tool unavailable, permission denied, ambiguity about which issue covers the item, etc.):
+
+- Do NOT resolve the thread. Leave `resolve=false` and reply that the thread is awaiting a tracking issue, or stop with `needs user decision`.
+- Record the unresolved item explicitly in the Phase 7 Summary `Deferred / Scope-out Items` section as `untracked — needs follow-up issue` so it is not silently dropped.
 
 ## Phase 6: Cycle Status
 
@@ -408,6 +460,9 @@ Post a PR comment through `{GH}:add_issue_comment`:
 ### Remaining Items
 - None | ...
 
+### Deferred / Scope-out Items
+- None | <list of follow-up issues>
+
 ### Verification
 - CI: ...
 - Unresolved threads: ...
@@ -432,6 +487,30 @@ Example for `ESCALATE — Unverified Fix`:
   - Recommendation: human review of the last commit before merge
 - Override applied (Issue #36): no
 ```
+
+### Deferred / Scope-out Items rules
+
+This section MUST list every reject whose reason was `out-of-scope`, `deferred`, or `follow-up` from this cycle, with the follow-up issue number and a one-line summary:
+
+```markdown
+### Deferred / Scope-out Items
+- #238 — Add tests for file distribution Supabase operations and W6 dialog
+- #239 — Improve accessibility for file distribution status and download buttons
+```
+
+`- None` is only allowed when **all** of the following are true:
+
+- No reject in the final Phase 3 decision table used reason `out-of-scope` / `deferred` / `follow-up`.
+- No thread was left unresolved due to Phase 5 step 4 (`untracked — needs follow-up issue`).
+
+If any item was left untracked, list it explicitly so it is not silently dropped:
+
+```markdown
+### Deferred / Scope-out Items
+- Thread <id> — untracked — needs follow-up issue (Phase 5 step 4)
+```
+
+`Won't fix` rejects do NOT go in this section — they were decided final and need no follow-up.
 
 ## Phase 8: Merge Gate
 

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `pr-review-subscribe` skill: scope-out / deferred reject を完了扱いにする際の追跡 Issue 必須化ルールを `docs/skills/pr-review-subscribe/SKILL.md` に追加（#51）
+  - Required Surfaces に `{GH}:create_issue` を追加（follow-up issue 作成を skill 仕様として明示）
+  - Phase 3 decision table に `Follow-up issue` 列を追加し、`out-of-scope` / `deferred` / `follow-up` reject では issue 番号必須と明記
+  - Phase 5 に reject 種別ごとの返信ルールを追加（既存Issue流用禁止、新規issue作成手順、`Won't fix` の扱い、Issue作成不可時はthread未resolveまたは`needs user decision`で停止）
+  - Phase 7 Summary に `### Deferred / Scope-out Items` セクションを新設し、`- None` 可とする条件を明確化
+
 ### Fixed
 
 - `mcp-resource-subscriber` CLI/probe は `recommended_next_action=POLL_AFTER` を非終端として扱い、同じ subscription を維持して次の `notifications/resources/updated` を待つようになりました（#52）
