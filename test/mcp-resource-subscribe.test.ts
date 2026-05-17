@@ -42,6 +42,8 @@ const TEST_CONFIG: TestConfig = {
 const servers: Server[] = [];
 const clients: Client[] = [];
 
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function startServer(logs: string[]) {
   const app = createMcpHttpApp(TEST_CONFIG, (line) => logs.push(line));
   const server = app.listen(0, "127.0.0.1");
@@ -163,7 +165,22 @@ async function startSubscribeRejectingServer(): Promise<string> {
   return `http://127.0.0.1:${address.port}/mcp`;
 }
 
-async function startActionSequenceServer(texts: string[], updateDelaysMs: number[]): Promise<string> {
+interface ActionSequenceReadContext {
+  readCount: number;
+  textIndex: number;
+  setTextIndex: (index: number) => void;
+  sendUpdate: () => Promise<void>;
+}
+
+interface ActionSequenceServerOptions {
+  readText?: (context: ActionSequenceReadContext) => string | Promise<string>;
+}
+
+async function startActionSequenceServer(
+  texts: string[],
+  updateDelaysMs: number[],
+  options: ActionSequenceServerOptions = {},
+): Promise<string> {
   const app = express();
   const transports = new Map<string, StreamableHTTPServerTransport>();
 
@@ -186,25 +203,38 @@ async function startActionSequenceServer(texts: string[], updateDelaysMs: number
           { capabilities: { resources: { subscribe: true } } },
         );
 
+        let readCount = 0;
         let textIndex = 0;
         const subscriptions = new Set<string>();
+        const setTextIndex = (index: number) => {
+          textIndex = index;
+        };
+        const sendUpdate = async () => {
+          if (subscriptions.has(REVIEW_STATUS_URI)) {
+            await mcpServer.server.sendResourceUpdated({ uri: REVIEW_STATUS_URI });
+          }
+        };
         mcpServer.server.setRequestHandler(ListResourcesRequestSchema, async () => ({
           resources: [REVIEW_STATUS_RESOURCE],
         }));
 
-        mcpServer.server.setRequestHandler(ReadResourceRequestSchema, async () => ({
-          contents: [{ uri: REVIEW_STATUS_URI, mimeType: "text/plain", text: texts[textIndex] ?? "" }],
-        }));
+        mcpServer.server.setRequestHandler(ReadResourceRequestSchema, async () => {
+          readCount++;
+          const text = options.readText
+            ? await options.readText({ readCount, textIndex, setTextIndex, sendUpdate })
+            : (texts[textIndex] ?? "");
+          return {
+            contents: [{ uri: REVIEW_STATUS_URI, mimeType: "text/plain", text }],
+          };
+        });
 
         mcpServer.server.setRequestHandler(SubscribeRequestSchema, async () => {
           subscriptions.add(REVIEW_STATUS_URI);
           updateDelaysMs.forEach((delayMs, index) => {
             setTimeout(() => {
               void (async () => {
-                textIndex = index + 1;
-                if (subscriptions.has(REVIEW_STATUS_URI)) {
-                  await mcpServer.server.sendResourceUpdated({ uri: REVIEW_STATUS_URI });
-                }
+                setTextIndex(index + 1);
+                await sendUpdate();
               })().catch(() => undefined);
             }, delayMs);
           });
@@ -403,6 +433,47 @@ describe("MCP resource subscription probe", () => {
       ],
       [20, 40],
     );
+
+    const result = await runSubscribeProbe({
+      url,
+      uri: REVIEW_STATUS_URI,
+      timeoutMs: 1_000,
+    });
+
+    expect(result.resourceFound).toBe(true);
+    expect(result.subscribed).toBe(true);
+    expect(result.route).toBe("subscription");
+    expect(result.notificationUri).toBe(REVIEW_STATUS_URI);
+    expect(result.notificationCount).toBe(2);
+    expect(result.finalText).toContain("review_status: COMPLETED");
+    expect(result.finalText).toContain("recommended_next_action: READ_REVIEW_THREADS");
+    expect(result.unsubscribed).toBe(true);
+    expect(result.errorCode).toBeNull();
+  });
+
+  it("does not skip notifications that arrive while reading after a POLL_AFTER notification", async () => {
+    const texts = [
+      "review_status: PENDING\nrecommended_next_action: POLL_AFTER\nversion: 1",
+      "review_status: IN_PROGRESS\nrecommended_next_action: POLL_AFTER\nversion: 2",
+      "review_status: COMPLETED\nrecommended_next_action: READ_REVIEW_THREADS\nversion: 3",
+    ];
+    const url = await startActionSequenceServer(texts, [20], {
+      readText: async ({ readCount, textIndex, setTextIndex, sendUpdate }) => {
+        if (readCount === 3) {
+          setTimeout(() => {
+            void (async () => {
+              setTextIndex(2);
+              await sendUpdate();
+            })().catch(() => undefined);
+          }, 10);
+
+          await sleep(30);
+          return texts[1] ?? "";
+        }
+
+        return texts[textIndex] ?? "";
+      },
+    });
 
     const result = await runSubscribeProbe({
       url,

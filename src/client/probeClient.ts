@@ -270,15 +270,16 @@ export async function runSubscribeProbe(options: SubscribeProbeOptions): Promise
     // notifications.cancel() and unsubscribeResource() always run — even when
     // the post-subscribe read (pre-completion check) or the final read throws.
     try {
+      const postSubscribeReadAfterSequence = notifications.receivedCount;
       // Immediately read once after subscribe to handle the pre-completion race condition:
       // if the resource was already updated before our subscription was established
       // (i.e., the notification fired before we subscribed), we will never receive
       // that notification. Comparing with initialText detects this window.
       const postSubscribeText = getResourceText(await client.readResource({ uri }));
-      notificationSequence = notifications.receivedCount;
+      notificationSequence = postSubscribeReadAfterSequence;
       if (postSubscribeText !== initialText) {
         finalText = postSubscribeText;
-        if (notificationSequence > 0) {
+        if (notifications.receivedCount > postSubscribeReadAfterSequence) {
           route = "subscription";
           notificationUri = notifications.lastUri;
         } else if (!shouldWaitForNextUpdate(finalText)) {
@@ -297,10 +298,8 @@ export async function runSubscribeProbe(options: SubscribeProbeOptions): Promise
           }
 
           finalText = getResourceText(await client.readResource({ uri }));
-          notificationSequence = notifications.receivedCount;
         }
       } else {
-        notificationSequence = notifications.receivedCount;
         try {
           const event = await notifications.waitAfter(notificationSequence, remainingMs());
           notificationSequence = event.sequence;
@@ -312,7 +311,6 @@ export async function runSubscribeProbe(options: SubscribeProbeOptions): Promise
 
         if (route === "subscription") {
           finalText = getResourceText(await client.readResource({ uri }));
-          notificationSequence = notifications.receivedCount;
           while (shouldWaitForNextUpdate(finalText) && !errorCode) {
             try {
               const event = await notifications.waitAfter(notificationSequence, remainingMs());
@@ -324,7 +322,6 @@ export async function runSubscribeProbe(options: SubscribeProbeOptions): Promise
             }
 
             finalText = getResourceText(await client.readResource({ uri }));
-            notificationSequence = notifications.receivedCount;
           }
         }
       }

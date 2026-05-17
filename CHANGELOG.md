@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `mcp-resource-subscriber` CLI/probe は `recommended_next_action=POLL_AFTER` を非終端として扱い、同じ subscription を維持して次の `notifications/resources/updated` を待つようになりました（#52）
+- `POLL_AFTER` 後の `resources/read` 中に届いた次の通知を消費済みにせず、終端更新を取りこぼさないようにしました
 
 ## [0.1.2] - 2026-05-15
 
