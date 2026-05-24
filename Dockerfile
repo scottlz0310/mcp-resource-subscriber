@@ -1,4 +1,4 @@
-FROM node:26.1.0-alpine AS deps
+FROM node:26.2.0-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
@@ -8,7 +8,7 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-FROM node:26.1.0-alpine AS runtime
+FROM node:26.2.0-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./
