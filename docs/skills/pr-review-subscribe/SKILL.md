@@ -1,30 +1,32 @@
 ---
 name: pr-review-subscribe
-description: Copilot PR review completion through MCP resource subscription, then autonomous review-thread handling. Use immediately after creating a PR, requesting Copilot review, or when the user asks to prove/use resource subscription for the PR review cycle. The main route MUST use resources/subscribe on the review watch resource; status polling is fallback only. Never merge autonomously.
+description: PR review completion and autonomous review-thread handling. Supports two routes: (1) Copilot review via MCP resource subscription (primary when copilot-review MCP is available), (2) Human review mode via GitHub REST/GraphQL when copilot-review MCP is unavailable. Use immediately after creating a PR, requesting Copilot review, after a human reviewer posts review threads, or when the user asks to process PR review comments. Never merge autonomously.
 ---
 
 # pr-review-subscribe
 
-Run the PR review cycle with MCP resource subscription as the primary completion signal.
+Run the PR review cycle. Two routes are supported:
 
-This skill is derived from `pr-review-cycle`, but changes Phase 1:
+- **Copilot route** (when `{CRM}` tools are available): MCP resource subscription as the primary completion signal.
+- **Human review route** (when `{CRM}` tools are unavailable): GitHub REST/GraphQL API for thread retrieval and resolution.
 
 ```text
-Primary:   start watch -> subscribe to watch resource -> wait for notifications/resources/updated -> read resource
-Fallback:  start watch -> poll get_copilot_review_watch_status
+Copilot primary:   start watch -> subscribe to watch resource -> wait for notifications/resources/updated -> read resource
+Copilot fallback:  start watch -> poll get_copilot_review_watch_status
+Human review:      wait for reviewer to submit (polling or user signal) -> read threads via GitHub API -> classify -> fix -> reply/resolve
 ```
 
 If server/tool names differ, load `references/tool-template.md` and map placeholders before starting.
 
 ## Required Surfaces
 
-| Placeholder | Purpose |
-| --- | --- |
-| `{CRM}` | Copilot review MCP tools: review status, request, watch start/cancel, threads, replies, cycle status |
-| `{GH}` | GitHub issue/PR comment tools |
-| `{RSRC}` | MCP resource operations: list/read/subscribe/unsubscribe or an SDK/protocol client wrapper |
+| Placeholder | Purpose | Route |
+| --- | --- | --- |
+| `{CRM}` | Copilot review MCP tools: review status, request, watch start/cancel, threads, replies, cycle status | Copilot only |
+| `{GH}` | GitHub issue/PR comment tools | Both |
+| `{RSRC}` | MCP resource operations: list/read/subscribe/unsubscribe or an SDK/protocol client wrapper | Copilot only |
 
-Minimum required operations:
+**Copilot route** minimum required operations:
 
 - `{CRM}:get_copilot_review_status`
 - `{CRM}:request_copilot_review`
@@ -39,20 +41,32 @@ Minimum required operations:
 - `{RSRC}:resources/read` equivalent for the watch resource
 - `{RSRC}:resources/unsubscribe` equivalent for the watch resource
 
-Fallback-only operation:
+Copilot fallback-only operation:
 
 - `{CRM}:get_copilot_review_watch_status`
+
+**Human review route** minimum required operations:
+
+- `gh` CLI (for `gh api` GraphQL and REST calls)
+- `{GH}:add_reply_to_pull_request_comment` (for thread replies)
+- `{GH}:add_issue_comment` (for PR summary comment)
+- `{GH}:create_issue` (for follow-up issue tracking)
 
 ## Flow
 
 ```text
-Phase 0 -> Phase 1S -> Phase 2 -> Phase 3 -> Phase 4 -> Phase 5 -> Phase 6
-                 ^                                      | WAIT / REQUEST_REREVIEW
-                 |                                      v
-                 +--------------------------------------+
-                         READY_TO_MERGE -> Phase 6.5 -> Phase 6.6 -> Phase 7 -> Phase 8
+Phase 0 -> CRM available? --(yes)--> Phase 1S -> Phase 2 -> Phase 3 -> Phase 4 -> Phase 5 -> Phase 6
+                                          ^                                        | WAIT / REQUEST_REREVIEW
+                                          |                                        v
+                                          +----------------------------------------+
+                                                   READY_TO_MERGE -> Phase 6.5 -> Phase 6.6 -> Phase 7 -> Phase 8
 
-Phase 1S detail:
+           CRM available? --(no)---> Phase H1 -> Phase H2 -> Phase 3 -> Phase 4 -> Phase H5 -> Phase H6
+                                                                                              |
+                                                                                              v
+                                                                         READY_TO_MERGE -> Phase 6.5 -> Phase 6.6 -> Phase 7 -> Phase 8
+
+Phase 1S detail (Copilot route):
   1S-A: Start Watch
   1S-B: Native resources/subscribe  --> success: wait for notification
          |
@@ -68,10 +82,13 @@ Phase 1S detail:
 ## Phase 0: Snapshot
 
 1. Determine `owner`, `repo`, and `pr`.
-2. Call `{CRM}:get_copilot_review_status`.
-3. If `status = COMPLETED` or `BLOCKED`, go to Phase 2.
-4. If `status = NOT_REQUESTED`, call `{CRM}:request_copilot_review`, then go to Phase 1S.
-5. If `status = PENDING` or `IN_PROGRESS`, go to Phase 1S.
+2. **Check CRM availability**: Verify that `{CRM}` tools (e.g., `mcp__copilot-review__*`) are present in the current session's available tool list.
+   - If available: proceed with Copilot route (steps 3–5 below).
+   - If unavailable: switch to **Human Review Mode** and go to **Phase H1**.
+3. Call `{CRM}:get_copilot_review_status`.
+4. If `status = COMPLETED` or `BLOCKED`, go to Phase 2.
+5. If `status = NOT_REQUESTED`, call `{CRM}:request_copilot_review`, then go to Phase 1S.
+6. If `status = PENDING` or `IN_PROGRESS`, go to Phase 1S.
 
 ## Phase 1S: Subscribe And Wait
 
@@ -234,6 +251,98 @@ Unsubscribe before:
 
 If unsubscribe fails, report it, but continue the review cycle if the watch has
 already reached a terminal state.
+
+---
+
+## Human Review Mode (Phase H1 – H6)
+
+These phases apply when `{CRM}` tools are unavailable (e.g., copilot-review MCP not running).
+The reviewer is a human using an external tool (another GitHub account, ChatGPT with GitHub integration, etc.).
+Thread retrieval and resolution use GitHub REST and GraphQL APIs via `gh`.
+
+### Phase H1: Wait For Review
+
+1. Run:
+   ```bash
+   gh pr view <pr> --repo <owner>/<repo> --json reviews,latestReviews
+   ```
+2. If a review with `state = COMMENTED | CHANGES_REQUESTED | APPROVED` exists from any account, proceed to Phase H2.
+3. If no review exists yet:
+   - Report: "No review found yet. Please let me know when a review has been submitted (or type `resume` to re-check)."
+   - Stop and wait for user signal. Do not poll automatically — human review timing is unpredictable.
+
+When the user signals that a review has been posted, re-enter at Phase H1.
+
+### Phase H2: Read Threads (Human Review Mode)
+
+Retrieve unresolved inline threads via GraphQL:
+
+```bash
+gh api graphql -f query='
+  query($owner: String!, $repo: String!, $pr: Int!) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $pr) {
+        reviewThreads(first: 100) {
+          nodes {
+            id
+            isResolved
+            comments(first: 10) {
+              nodes {
+                databaseId
+                body
+                path
+                line
+                author { login }
+                createdAt
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+' -f owner=<owner> -f repo=<repo> -F pr=<pr>
+```
+
+- Collect threads where `isResolved = false`.
+- Record each thread's `id` (GraphQL node ID, `PRIT_...` format — used for resolve mutation) and the root comment's `databaseId` (used for replies).
+- If 0 unresolved threads: proceed to Phase 6.5 (same as Phase 2 routing on 0 threads).
+- Otherwise: proceed to Phase 3.
+
+Route label for Phase 7 report: `human-review route`.
+
+### Phase H5: Reply And Resolve (Human Review Mode)
+
+For every reviewed thread:
+
+**Reply** using `{GH}:add_reply_to_pull_request_comment`:
+- `owner`, `repo`, `pull_number`: as determined in Phase 0
+- `comment_id`: the root comment's `databaseId` from Phase H2
+- `body`: reply text (same content rules as Phase 5)
+
+**Resolve** using GraphQL mutation via `gh api graphql`:
+```bash
+gh api graphql -f query='
+  mutation($threadId: ID!) {
+    resolveReviewThread(input: {threadId: $threadId}) {
+      thread { id isResolved }
+    }
+  }
+' -f threadId=<PRIT_node_id>
+```
+
+- Apply the same fixed / rejected reply rules as Phase 5 (scope-out requires follow-up issue, etc.).
+- Set resolve only when the reply has been confirmed sent. If `gh api graphql` returns an error, report it and continue to the next thread without silently skipping.
+
+### Phase H6: Cycle Status (Human Review Mode)
+
+Re-run the Phase H2 query to count remaining unresolved threads.
+
+- unresolved = 0 → `READY_TO_MERGE`; proceed to Phase 6.5.
+- unresolved > 0 → Report the remaining items to the user. Ask whether to request a re-review from the human reviewer or to defer.
+  Do NOT loop back automatically — human re-review requires the reviewer to act.
+
+---
 
 ## Phase 2: Read Threads
 
@@ -443,12 +552,14 @@ Post a PR comment through `{GH}:add_issue_comment`:
 ## Review Cycle Summary
 
 ### Route
-- Completion wait: native subscription route | sdk-wrapper subscription route | fallback polling route
+- Mode: copilot-review route | human-review route
+- Completion wait: native subscription route | sdk-wrapper subscription route | fallback polling route | human-review (user-signaled)
 - Watch resource: <resource_uri or N/A>
 - Watch ID: <watch_id or N/A>
 - Notification received: yes | no | N/A
 - Post-notification read: terminal | non-terminal | N/A
 - Unsubscribed: yes | no | N/A
+- Reviewer account: <login or "Copilot"> (human-review route only)
 
 ### Changes
 - ...
@@ -538,16 +649,22 @@ If any other condition is missing, report it instead of merging.
 In the final response, include:
 
 - PR URL
-- which route was used: native subscription, sdk-wrapper subscription, or fallback polling
-- `resource_uri` and `watch_id` when available
+- **mode**: `copilot-review route` or `human-review route`
+- which route was used: native subscription, sdk-wrapper subscription, fallback polling, or human-review (user-signaled)
+- `resource_uri` and `watch_id` when available (copilot-review route only)
+- reviewer account login(s) (human-review route)
 - commits pushed
 - CI status
 - unresolved thread count
-- subscription evidence:
+- for copilot-review route — subscription evidence:
   - whether `{RSRC}:resources/subscribe` was actually used
   - whether `notifications/resources/updated` was received
   - whether `{RSRC}:resources/read` after notification reached a terminal watch state
   - whether `{RSRC}:resources/unsubscribe` completed
+- for human-review route — resolution evidence:
+  - number of threads replied via `{GH}:add_reply_to_pull_request_comment`
+  - number of threads resolved via `gh api graphql resolveReviewThread`
+  - any threads left unresolved (with reason)
 - merge readiness
 - `termination_status` (`READY_TO_MERGE` / `ESCALATE — Clean` / `ESCALATE — Unverified Fix`)
 - on `ESCALATE — Unverified Fix`: the unverified blocking commit SHA(s) and an explicit human-review recommendation
