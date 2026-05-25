@@ -461,11 +461,32 @@ If a follow-up issue cannot be created or confirmed in this cycle:
 
 Track `cycles_done` locally (starts at 0, increments each time a review cycle processes new threads). `max_cycles` default is 3.
 
-**If unresolved threads = 0**: proceed to **Phase 6.5** with `termination_status = READY_TO_MERGE`.
+**Step 1: Re-fetch unresolved threads** (re-run the Phase U2 query).
 
-> **Issue #36 override**: when unresolved = 0 on any cycle, always proceed to Phase 6.5 regardless of `cycles_done`. Never request a re-review just because a cycle counter says so.
+- If unresolved > 0: this is unexpected (Phase U5 should have resolved everything). Report remaining threads and stop with `needs user decision`.
 
-**If unresolved threads > 0**, choose re-review approach by `provider`:
+**Step 2: Determine `need_re_review`** (only when unresolved = 0):
+
+| fix_type from Phase 3 | Accepted `blocking` class? | need_re_review |
+| --- | --- | --- |
+| `none` | — | **no** |
+| `trivial` | — | **no** |
+| `logic` or `spec_change` | any | **yes** |
+| any | at least 1 `blocking` accept | **yes** |
+
+**Step 3: Route**
+
+- `need_re_review = no` → proceed to **Phase 6.5** with `termination_status = READY_TO_MERGE`.
+
+> **Issue #36 clarification**: "never re-review just because cycles_done < max_cycles" applies only
+> when `need_re_review = no`. If `fix_type` is `logic` / `spec_change` or a `blocking` fix was
+> accepted, requesting re-review is legitimate — the Issue #36 override does NOT suppress that.
+
+- `need_re_review = yes` AND `cycles_done ≥ max_cycles` → classify termination and proceed to **Phase 6.5**.
+
+- `need_re_review = yes` AND `cycles_done < max_cycles` → choose re-review approach by `provider`:
+
+**If unresolved threads > 0** (should not occur after Phase U5): stop with `needs user decision` — do not proceed to re-review routing below.
 
 ### Structured re-review (copilot-review)
 

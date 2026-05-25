@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `termination_status` に `WAITING_FOR_REVIEW(provider=...)` を追加
   - Phase 7 Summary に `acquisition provider`・`re-review mode`・`re-review status`・`cycles done` フィールドを追加
   - Phase 8 Merge Gate に `WAITING_FOR_REVIEW` 状態のチェックを追加
+- `pr-review-subscribe` skill: Phase U6 に `need_re_review` 判定を追加（PR #68 レビュー指摘対応）
+  - `unresolved = 0` だけで READY_TO_MERGE に進まず、`fix_type` と `blocking` accept の有無で `need_re_review` を判定
+  - `fix_type = logic | spec_change` または `blocking` accept が 1 件以上あれば re-review を要求
+  - `fix_type = none | trivial` の場合のみ即 READY_TO_MERGE
+  - Issue #36 override を「`need_re_review = no` の場合のみ適用」と明確化
 
 ## [0.1.3] - 2026-05-17
 
