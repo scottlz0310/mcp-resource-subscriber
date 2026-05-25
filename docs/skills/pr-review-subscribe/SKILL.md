@@ -1,72 +1,76 @@
 ---
 name: pr-review-subscribe
-description: PR review completion and autonomous review-thread handling. Supports two routes: (1) Copilot review via MCP resource subscription (primary when copilot-review MCP is available), (2) Human review mode via GitHub REST/GraphQL when copilot-review MCP is unavailable. Use immediately after creating a PR, requesting Copilot review, after a human reviewer posts review threads, or when the user asks to process PR review comments. Never merge autonomously.
+description: PR review cycle with provider-agnostic Unified Review Thread Handling. Supports multiple acquisition providers — copilot-review (MCP watch/subscribe), codex (@codex mention), external/human (user-signaled), or existing threads. Thread collection, classification, fixing, reply, and resolve are unified across all providers. Re-review uses structured loops for copilot-review and message-based requests for others. Use immediately after creating a PR, requesting any review, after a reviewer posts threads, or when the user asks to process PR review comments. Never merge autonomously.
 ---
 
 # pr-review-subscribe
 
-Run the PR review cycle. Two routes are supported:
-
-- **Copilot route** (when `{CRM}` tools are available): MCP resource subscription as the primary completion signal.
-- **Human review route** (when `{CRM}` tools are unavailable): GitHub REST/GraphQL API for thread retrieval and resolution.
+PR review cycle with **provider abstraction**: review acquisition and thread processing are separate concerns.
 
 ```text
-Copilot primary:   start watch -> subscribe to watch resource -> wait for notifications/resources/updated -> read resource
-Copilot fallback:  start watch -> poll get_copilot_review_watch_status
-Human review:      wait for reviewer to submit (polling or user signal) -> read threads via GitHub API -> classify -> fix -> reply/resolve
+provider = auto | copilot-review | codex | external | existing
+
+Review acquisition (provider-specific):
+  copilot-review → Phase 1S (watch/subscribe/complete)
+  codex          → Phase W  (post @codex review comment, wait)
+  external/human → Phase W  (wait for user signal)
+  existing       → skip directly to Phase U1
+
+Unified Review Thread Handling (all providers):
+  Phase U1 → Phase U2 → Phase 3 → Phase 4 → Phase U5 → Phase U6
 ```
 
 If server/tool names differ, load `references/tool-template.md` and map placeholders before starting.
 
 ## Required Surfaces
 
-| Placeholder | Purpose | Route |
+| Placeholder | Purpose | When used |
 | --- | --- | --- |
-| `{CRM}` | Copilot review MCP tools: review status, request, watch start/cancel, threads, replies, cycle status | Copilot only |
-| `{GH}` | GitHub issue/PR comment tools | Both |
-| `{RSRC}` | MCP resource operations: list/read/subscribe/unsubscribe or an SDK/protocol client wrapper | Copilot only |
+| `{CRM}` | Copilot review MCP tools: review status, request, watch start/cancel | copilot-review acquisition only |
+| `{GH}` | GitHub issue/PR comment tools | All providers |
+| `{RSRC}` | MCP resource operations: subscribe/read/unsubscribe or SDK wrapper | copilot-review acquisition only |
 
-**Copilot route** minimum required operations:
+**copilot-review acquisition** minimum operations:
 
 - `{CRM}:get_copilot_review_status`
 - `{CRM}:request_copilot_review`
 - `{CRM}:start_copilot_review_watch`
 - `{CRM}:cancel_copilot_review_watch`
-- `{CRM}:get_review_threads`
-- `{CRM}:reply_and_resolve_review_thread`
-- `{CRM}:get_pr_review_cycle_status`
-- `{GH}:add_issue_comment`
-- `{GH}:create_issue` (required for Phase 5 scope-out / deferred reject follow-up tracking)
+- `{CRM}:get_copilot_review_watch_status` (fallback polling only)
 - `{RSRC}:resources/subscribe` equivalent for the watch resource
 - `{RSRC}:resources/read` equivalent for the watch resource
 - `{RSRC}:resources/unsubscribe` equivalent for the watch resource
 
-Copilot fallback-only operation:
-
-- `{CRM}:get_copilot_review_watch_status`
-
-**Human review route** minimum required operations:
+**Unified thread handling** minimum operations (all providers):
 
 - `gh` CLI (for `gh api` GraphQL and REST calls)
-- `{GH}:add_reply_to_pull_request_comment` (for thread replies)
-- `{GH}:add_issue_comment` (for PR summary comment)
+- `{GH}:add_reply_to_pull_request_comment` (map actual name via `references/tool-template.md`)
+- `{GH}:add_issue_comment` (for PR summary comment and re-review requests)
 - `{GH}:create_issue` (for follow-up issue tracking)
 
 ## Flow
 
 ```text
-Phase 0 -> CRM available? --(yes)--> Phase 1S -> Phase 2 -> Phase 3 -> Phase 4 -> Phase 5 -> Phase 6
-                                          ^                                        | WAIT / REQUEST_REREVIEW
-                                          |                                        v
-                                          +----------------------------------------+
-                                                   READY_TO_MERGE -> Phase 6.5 -> Phase 6.6 -> Phase 7 -> Phase 8
+Phase 0: provider selection
+  |
+  +--> existing threads detected --------> Phase U1
+  |
+  +--> copilot-review --> Phase 1S -------> Phase U1
+  |
+  +--> codex/external --> Phase W ---------> Phase U1 (on user signal)
 
-           CRM available? --(no)---> Phase H1 -> Phase H2 -> Phase 3 -> Phase 4 -> Phase H5 -> Phase H6
-                                                                                              |
-                                                                                              v
-                                                                         READY_TO_MERGE -> Phase 6.5 -> Phase 6.6 -> Phase 7 -> Phase 8
+Phase U1 -> Phase U2 -> Phase 3 -> Phase 4 -> Phase U5 -> Phase U6
+                                                             |
+                        READY_TO_MERGE <-------- unresolved=0
+                             |
+                   Phase 6.5 -> Phase 6.6 -> Phase 7 -> Phase 8
 
-Phase 1S detail (Copilot route):
+Phase U6 re-review policy:
+  copilot-review  → structured: Phase 1S loop (max cycles)
+  codex/external  → message-based: post comment → WAITING_FOR_REVIEW → stop
+  (on ESCALATE or max cycles exceeded → Phase 6.5)
+
+Phase 1S detail (copilot-review acquisition):
   1S-A: Start Watch
   1S-B: Native resources/subscribe  --> success: wait for notification
          |
@@ -79,24 +83,55 @@ Phase 1S detail (Copilot route):
   1S-C: Fallback Polling            (last resort only)
 ```
 
-## Phase 0: Snapshot
+## Phase 0: Provider Selection
 
 1. Determine `owner`, `repo`, and `pr`.
-2. **Check CRM availability**: Verify that `{CRM}` tools (e.g., `mcp__copilot-review__*`) are present in the current session's available tool list.
-   - If unavailable: switch to **Human Review Mode** and go to **Phase H1**.
-   - If available: continue to step 2a.
-2a. **Check for Human Review Mode**: Switch to **Human Review Mode** (Phase H1) if any of the following are true:
-   - The user explicitly invoked the skill with a `human-review` argument or requested processing of a human reviewer's comments.
-   - A human reviewer has already posted review threads that need to be addressed (detected via `gh pr view --json latestReviews` showing `COMMENTED` / `CHANGES_REQUESTED` from a non-Copilot account).
-   - Otherwise: proceed with Copilot route (steps 3–6 below).
-3. Call `{CRM}:get_copilot_review_status`.
-4. If `status = COMPLETED` or `BLOCKED`, go to Phase 2.
-5. If `status = NOT_REQUESTED`, call `{CRM}:request_copilot_review`, then go to Phase 1S.
-6. If `status = PENDING` or `IN_PROGRESS`, go to Phase 1S.
+2. Determine `provider` using the following priority:
 
-## Phase 1S: Subscribe And Wait
+   **a. Explicit specification** (highest priority): if the user specified a provider (`copilot-review`, `codex`, `external`, `existing`), use it and jump to the corresponding step below.
 
-Record the Phase 1S start time. Reset the 15-minute timeout every time Phase 6 loops back here.
+   **b. Auto — existing threads detected**: run:
+   ```bash
+   gh pr view <pr> --repo <owner>/<repo> --json latestReviews
+   ```
+   If any entry has `state = COMMENTED | CHANGES_REQUESTED | APPROVED`, set `provider = existing` and go to **Phase U1**.
+
+   **c. Auto — {CRM} available**: if `{CRM}` tools (e.g., `mcp__copilot-review__*`) are present in the session's available tool list, set `provider = copilot-review` and proceed to steps 3–6.
+
+   **d. Auto — codex mentioned**: if the user's request mentions Codex or `@codex`, set `provider = codex` and go to **Phase W**.
+
+   **e. Auto — fallback**: set `provider = external` and go to **Phase W**.
+
+3. *(copilot-review only)* Call `{CRM}:get_copilot_review_status`.
+4. If `status = COMPLETED` or `BLOCKED`, go to **Phase U1**.
+5. If `status = NOT_REQUESTED`, call `{CRM}:request_copilot_review`, then go to **Phase 1S**.
+6. If `status = PENDING` or `IN_PROGRESS`, go to **Phase 1S**.
+
+## Phase W: Wait For Review (codex / external / human)
+
+### codex
+
+Post a review request comment via `{GH}:add_issue_comment`:
+
+```markdown
+@codex review
+
+Please review the latest commit.
+```
+
+Report status `WAITING_FOR_REVIEW(provider=codex)` and stop. When the user signals that Codex has posted a review, re-enter at **Phase U1**.
+
+### external / human
+
+Report: "Waiting for reviewer. Please let me know when a review has been submitted (or type `resume` to re-check)."
+
+Stop with status `WAITING_FOR_REVIEW(provider=external)`. When the user signals, re-enter at **Phase U1**.
+
+Do not poll automatically — non-Copilot review timing is unpredictable.
+
+## Phase 1S: Subscribe And Wait (copilot-review only)
+
+Record the Phase 1S start time. Reset the 15-minute timeout every time Phase U6 loops back here.
 
 ### 1S-A: Start Watch
 
@@ -118,7 +153,7 @@ Attempt native subscription first:
 1. Use `{RSRC}:resources/subscribe` on `resource_uri`.
 2. **Immediately** call `{RSRC}:resources/read` for `resource_uri` once (no delay, no polling).
    If the result already shows a terminal state (e.g., `recommended_next_action=READ_REVIEW_THREADS`),
-   proceed to Phase 2 **without waiting for a notification**.
+   proceed to Phase U1 **without waiting for a notification**.
    This handles the race condition where Copilot completed the review before the subscription
    was established and the `notifications/resources/updated` was already sent.
 3. If the post-subscribe read is non-terminal, wait for `notifications/resources/updated` for that same `resource_uri`.
@@ -136,7 +171,7 @@ Action table:
 
 | recommended_next_action | Next step |
 | --- | --- |
-| `READ_REVIEW_THREADS` | Phase 2 |
+| `READ_REVIEW_THREADS` | Phase U1 |
 | `POLL_AFTER` | Keep the subscription open and wait for the next update |
 | `CHECK_FAILURE` | Report the error and stop |
 | `REAUTH_AND_START_NEW_WATCH` | Ask the user to re-authenticate and stop |
@@ -198,7 +233,7 @@ pnpm dlx mcp-resource-subscriber \
    - 通知ごとに resource を再読込する
    - `recommended_next_action=POLL_AFTER` の場合は同じ subscription を維持し、次の通知を待つ
    - 非 `POLL_AFTER` action、timeout、error のいずれかに到達してから return する
-4. Parse the output and follow the same action table as 1S-B. wrapper の `exit 0` は transport 成功としてのみ扱う。final block が `recommended_next_action=READ_REVIEW_THREADS` の場合だけ Phase 2 に進む。
+4. Parse the output and follow the same action table as 1S-B. wrapper の `exit 0` は transport 成功としてのみ扱う。final block が `recommended_next_action=READ_REVIEW_THREADS` の場合だけ Phase U1 に進む。
 
 Report the route as `sdk-wrapper subscription route` in the final summary.
 
@@ -246,7 +281,7 @@ for `resource_uri` before leaving Phase 1S.
 
 Unsubscribe before:
 
-- entering Phase 2
+- entering Phase U1
 - switching to fallback polling
 - returning to Phase 1S-A with `START_NEW_WATCH`
 - stopping due to `CHECK_FAILURE`
@@ -258,28 +293,20 @@ already reached a terminal state.
 
 ---
 
-## Human Review Mode (Phase H1 – H6)
+## Phase U1: Confirm Review Exists
 
-These phases apply when `{CRM}` tools are unavailable (e.g., copilot-review MCP not running).
-The reviewer is a human using an external tool (another GitHub account, ChatGPT with GitHub integration, etc.).
-Thread retrieval and resolution use GitHub REST and GraphQL APIs via `gh`.
+Run:
 
-### Phase H1: Wait For Review
+```bash
+gh pr view <pr> --repo <owner>/<repo> --json reviews,latestReviews
+```
 
-1. Run:
-   ```bash
-   gh pr view <pr> --repo <owner>/<repo> --json reviews,latestReviews
-   ```
-2. If a review with `state = COMMENTED | CHANGES_REQUESTED | APPROVED` exists from any account, proceed to Phase H2.
-3. If no review exists yet:
-   - Report: "No review found yet. Please let me know when a review has been submitted (or type `resume` to re-check)."
-   - Stop and wait for user signal. Do not poll automatically — human review timing is unpredictable.
+- If reviews exist (`state = COMMENTED | CHANGES_REQUESTED | APPROVED`): record reviewer logins and proceed to **Phase U2**.
+- If no reviews found (unexpected after acquisition): report "No review found — returning to Phase 0" and return to Phase 0.
 
-When the user signals that a review has been posted, re-enter at Phase H1.
+## Phase U2: Collect All Review Threads
 
-### Phase H2: Read Threads (Human Review Mode)
-
-Retrieve unresolved inline threads via GraphQL:
+Retrieve all review threads via paginated GraphQL:
 
 ```bash
 gh api graphql -f query='
@@ -312,59 +339,8 @@ gh api graphql -f query='
 - If `pageInfo.hasNextPage` is `true`, repeat the query with `-f cursor=<endCursor>` until `hasNextPage = false`. Collect all nodes across pages before proceeding.
 - Collect threads where `isResolved = false`.
 - Record each thread's `id` (GraphQL node ID — treat as opaque; observed format is `PRRT_...` — used for resolve mutation) and the root comment's `databaseId` (used for replies).
-- If 0 unresolved threads: proceed to Phase 6.5 (same as Phase 2 routing on 0 threads).
-- Otherwise: proceed to Phase 3.
-
-Route label for Phase 7 report: `human-review route`.
-
-### Phase H5: Reply And Resolve (Human Review Mode)
-
-For every reviewed thread:
-
-**Reply** using `{GH}:add_reply_to_pull_request_comment` (map to the actual operation name via `references/tool-template.md` — e.g. `reply_to_review_comment` in some MCP servers):
-- `owner`, `repo`, `pull_number`: as determined in Phase 0
-- `comment_id`: the root comment's `databaseId` from Phase H2
-- `body`: reply text (same content rules as Phase 5)
-
-**Resolve** using GraphQL mutation via `gh api graphql`:
-```bash
-gh api graphql -f query='
-  mutation($threadId: ID!) {
-    resolveReviewThread(input: {threadId: $threadId}) {
-      thread { id isResolved }
-    }
-  }
-' -f threadId=<PRRT_node_id>
-```
-
-- Apply the same fixed / rejected reply rules as Phase 5 (scope-out requires follow-up issue, etc.).
-- Set resolve only when the reply has been confirmed sent. If `gh api graphql` returns an error, report it and continue to the next thread without silently skipping.
-
-### Phase H6: Cycle Status (Human Review Mode)
-
-Re-run the Phase H2 query to count remaining unresolved threads.
-
-- unresolved = 0 → `READY_TO_MERGE`; proceed to Phase 6.5.
-- unresolved > 0 → Report the remaining items to the user. Ask whether to request a re-review from the human reviewer or to defer.
-  Do NOT loop back automatically — human re-review requires the reviewer to act.
-
----
-
-## Phase 2: Read Threads
-
-Call `{CRM}:get_review_threads`.
-
-**Routing on 0 unresolved threads** (both cases → Phase 6.5):
-
-- `cycles_done = 0` and unresolved = 0: Copilot found no issues on first review.
-- `cycles_done ≥ 1` and unresolved = 0: Re-review completed with no new issues; all previous fixes were approved.
-
-> **Issue #36 fix**: the original skill lacked the second branch. Without it the agent
-> entered Phase 3–5 with nothing to do and then Phase 6, which returned
-> `REQUEST_REREVIEW` again until `ESCALATE`. When unresolved = 0 on any cycle,
-> always skip directly to Phase 6.5.
-
-Otherwise (unresolved > 0), proceed to Phase 3.
+- If 0 unresolved threads: proceed to **Phase 6.5**.
+- Otherwise: proceed to **Phase 3**.
 
 ## Phase 3: Classify And Decide
 
@@ -379,7 +355,7 @@ Classify each unresolved comment:
 Decide `accept` or `reject` autonomously. Reject only with a concrete reason such as out of scope, already handled, invalid premise, or intentionally deferred.
 
 **Reject constraint — scope-out / deferred requires tracking issue.**
-A reject whose reason is `out-of-scope`, `deferred`, or `follow-up` (i.e., the item is acknowledged as valid but will be handled later) is NOT complete until it is traceable to a follow-up issue. For these reject reasons, the `Follow-up issue` column below MUST be filled with a valid issue number that actually covers the item. See Phase 5 for issue creation / linking rules.
+A reject whose reason is `out-of-scope`, `deferred`, or `follow-up` (i.e., the item is acknowledged as valid but will be handled later) is NOT complete until it is traceable to a follow-up issue. For these reject reasons, the `Follow-up issue` column below MUST be filled with a valid issue number that actually covers the item. See Phase U5 for issue creation / linking rules.
 
 Reject reasons that do NOT require a follow-up issue:
 
@@ -397,10 +373,10 @@ Show this table before editing:
 `Follow-up issue` column rules:
 
 - `accept` rows: leave blank or `N/A`.
-- `reject` rows with reason `out-of-scope` / `deferred` / `follow-up`: MUST contain `#<number>` of an issue that actually covers the item. Blank or `TBD` is not allowed at this stage — defer Phase 5 instead (see Phase 5 step 4).
+- `reject` rows with reason `out-of-scope` / `deferred` / `follow-up`: MUST contain `#<number>` of an issue that actually covers the item. Blank or `TBD` is not allowed at this stage — defer Phase U5 instead (see Phase U5 step 4).
 - `reject` rows with reason `already-handled` / `invalid-premise` / `wont-fix`: leave blank or `N/A`.
 
-Choose `fix_type` for Phase 6:
+Choose `fix_type` for Phase U6:
 
 | fix_type | Use for |
 | --- | --- |
@@ -420,17 +396,35 @@ Choose `fix_type` for Phase 6:
 
 Do not revert unrelated user changes.
 
-## Phase 5: Reply And Resolve
+## Phase U5: Reply And Resolve
 
-For every reviewed thread, call `{CRM}:reply_and_resolve_review_thread`.
+For every reviewed thread:
+
+**Reply** using `{GH}:add_reply_to_pull_request_comment` (map to the actual operation name via `references/tool-template.md` — e.g. `reply_to_review_comment` in some MCP servers):
+- `owner`, `repo`, `pull_number`: as determined in Phase 0
+- `comment_id`: the root comment's `databaseId` from Phase U2
+- `body`: reply text (see reject sub-rules below)
+
+**Resolve** using GraphQL mutation via `gh api graphql`:
+
+```bash
+gh api graphql -f query='
+  mutation($threadId: ID!) {
+    resolveReviewThread(input: {threadId: $threadId}) {
+      thread { id isResolved }
+    }
+  }
+' -f threadId=<PRRT_node_id>
+```
 
 - Fixed: mention the commit and concrete fix.
 - Rejected: explain the reason. See the reject sub-rules below.
-- Always set `resolve=true` unless the tool or platform prevents resolution, or unless step 4 below requires the thread to stay open.
+- Always set resolve (call the mutation) unless the tool returns an error, or step 4 below requires the thread to stay open.
+- If `gh api graphql` returns an error, report it and continue to the next thread without silently skipping.
 
 ### Reject reply rules
 
-A scope-out reject is not complete until it is traceable. If the reply says the item will be handled later, the reply MUST include a valid follow-up issue number that actually covers that item. Do not resolve the thread with a vague "out of scope" or "will handle later" statement without creating or linking the tracking issue.
+A scope-out reject is not complete until it is traceable. If the reply says the item will be handled later, the reply MUST include a valid follow-up issue number that actually covers that item.
 
 #### 1. Linking an existing issue
 
@@ -438,12 +432,11 @@ When an existing issue already covers the item:
 
 - Include `Tracked by #xxx` or `Follow-up: #xxx` in the reply body.
 - Confirm the linked issue's title / description actually covers the rejected comment's substance. Do NOT reuse an issue that was opened for a different purpose just because it touches the same file or component.
-  - Bad example: linking a "show latest-version banner" issue as the follow-up for a "missing tests" or "accessibility" comment.
 - If no existing issue covers the item, go to step 2 instead.
 
 #### 2. Creating a new follow-up issue
 
-When no existing issue covers the item, create one before (or within the same Phase 5 as) resolving the thread:
+When no existing issue covers the item, create one before (or within the same Phase U5 as) resolving the thread:
 
 1. Call `{GH}:create_issue` with a title and body that clearly describe the deferred work and reference the originating PR / thread.
 2. Capture the new issue number.
@@ -459,75 +452,94 @@ If the decision is to truly not address the item:
 
 #### 4. When issue creation or linking is not possible
 
-If a follow-up issue cannot be created or confirmed in this cycle (tool unavailable, permission denied, ambiguity about which issue covers the item, etc.):
+If a follow-up issue cannot be created or confirmed in this cycle:
 
-- Do NOT resolve the thread. Leave `resolve=false` and reply that the thread is awaiting a tracking issue, or stop with `needs user decision`.
+- Do NOT resolve the thread. Leave it open and reply that the thread is awaiting a tracking issue, or stop with `needs user decision`.
 - Record the unresolved item explicitly in the Phase 7 Summary `Deferred / Scope-out Items` section as `untracked — needs follow-up issue` so it is not silently dropped.
 
-## Phase 6: Cycle Status
+## Phase U6: Cycle Status + Re-review Policy
 
-Call `{CRM}:get_pr_review_cycle_status`:
+Track `cycles_done` locally (starts at 0, increments each time a review cycle processes new threads). `max_cycles` default is 3.
 
-```json
-{
-  "owner": "<owner>",
-  "repo": "<repo>",
-  "pr": 42,
-  "cycles_done": 0,
-  "max_cycles": 0,
-  "fix_type": "<fix_type>"
-}
+**Step 1: Re-fetch unresolved threads** (re-run the Phase U2 query).
+
+- If unresolved > 0: this is unexpected (Phase U5 should have resolved everything). Report remaining threads and stop with `needs user decision`.
+
+**Step 2: Determine `need_re_review`** (only when unresolved = 0):
+
+| fix_type from Phase 3 | Accepted `blocking` class? | need_re_review |
+| --- | --- | --- |
+| `none` | — | **no** |
+| `trivial` | — | **no** |
+| `logic` or `spec_change` | any | **yes** |
+| any | at least 1 `blocking` accept | **yes** |
+
+**Step 3: Route**
+
+- `need_re_review = no` → proceed to **Phase 6.5** with `termination_status = READY_TO_MERGE`.
+
+> **Issue #36 clarification**: "never re-review just because cycles_done < max_cycles" applies only
+> when `need_re_review = no`. If `fix_type` is `logic` / `spec_change` or a `blocking` fix was
+> accepted, requesting re-review is legitimate — the Issue #36 override does NOT suppress that.
+
+- `need_re_review = yes` AND `cycles_done ≥ max_cycles` → classify termination and proceed to **Phase 6.5**.
+
+- `need_re_review = yes` AND `cycles_done < max_cycles` → choose re-review approach by `provider`:
+
+**If unresolved threads > 0** (should not occur after Phase U5): stop with `needs user decision` — do not proceed to re-review routing below.
+
+### Structured re-review (copilot-review)
+
+If `cycles_done < max_cycles`:
+1. Call `{CRM}:request_copilot_review`.
+2. Increment `cycles_done`.
+3. Return to **Phase 1S**.
+
+If `cycles_done ≥ max_cycles`: classify termination and proceed to **Phase 6.5**.
+
+**Termination classification:**
+
+| Classification | Condition | Merge implication |
+| --- | --- | --- |
+| ✅ `READY_TO_MERGE` | unresolved = 0 (any cycle) | Safe — normal merge gate |
+| 🟡 `ESCALATE — Clean` | max cycles AND final cycle has **no** `blocking` accepts | Likely safe — note unverified status |
+| 🔴 `ESCALATE — Unverified Fix` | max cycles AND final cycle accepted **≥ 1 `blocking` fix** not re-reviewed | Risky — recommend human review of last commit |
+
+Record for Phase 7:
+- `termination_status`
+- `final_cycle_fix_types`: counts of `blocking` / `non-blocking` / `suggestion` / `trivial` accepts
+- `unverified_blocking_commits`: commit SHAs when classification is `ESCALATE — Unverified Fix`
+
+On `ESCALATE — Unverified Fix`, still proceed to Phase 6.5 (CI and summary are still useful), but Phase 8 must downgrade merge readiness.
+
+### Message-based re-review (codex / external / human)
+
+Post a re-review request comment via `{GH}:add_issue_comment`.
+
+**For codex:**
+
+```markdown
+@codex review
+
+The previously reported review threads have been addressed and resolved.
+Please re-review the latest commit, focusing on:
+- [summary of accepted fixes]
 ```
 
-> `max_cycles: 0` means "use the server-side default".
-> It must not be interpreted as unlimited retries.
-> The default is controlled by `MAX_REVIEW_CYCLES` and is 3 if unset.
+**For external / human (`<reviewer>` = detected reviewer login from Phase U1):**
 
-Follow `recommended_action`:
+```markdown
+@<reviewer> レビュー指摘への対応が完了しました。
 
-| Action | Next step |
-| --- | --- |
-| `WAIT` | Increment `cycles_done`, return to Phase 1S |
-| `REPLY_RESOLVE` | Return to Phase 2 |
-| `REQUEST_REREVIEW` | See override rule below; otherwise call `{CRM}:request_copilot_review`, increment `cycles_done`, return to Phase 1S |
-| `READY_TO_MERGE` | Phase 6.5 |
-| `ESCALATE` | Classify and report (see termination classification below), then stop |
+再レビューでは以下を中心に確認してください。
+- [accepted fix summary]
+```
 
-**`REQUEST_REREVIEW` override (Issue #36)**:
-If `recommended_action = REQUEST_REREVIEW` AND the just-completed review returned 0 new unresolved threads, do **not** request another review. The tool's cycle accounting does not have enough context to detect this; the agent must apply this judgment override.
+Stop with `termination_status = WAITING_FOR_REVIEW(provider=<provider>)`. Do NOT loop back automatically.
 
-Treat the situation as `READY_TO_MERGE` and proceed to Phase 6.5.
+When the user signals that a new review has been posted, increment `cycles_done` and re-enter at **Phase U1**.
 
-This override applies when both are true:
-- `cycles_done ≥ 1` (this is not the first cycle)
-- unresolved thread count from Phase 2 of this cycle = 0
-
-**Termination classification (Issue #36 follow-up)**:
-
-When the cycle terminates, classify the outcome so Phase 7 / Phase 8 can communicate
-the right level of confidence:
-
-| Classification | Condition | Implication for merge |
-| --- | --- | --- |
-| ✅ `READY_TO_MERGE` | `recommended_action = READY_TO_MERGE`, or override applied with `unresolved = 0` | Safe — normal merge gate |
-| 🟡 `ESCALATE — Clean` | `recommended_action = ESCALATE` AND the final cycle's accepted fixes contain **no** `blocking` items (only `non-blocking` / `suggestion` / `trivial`, or no fix at all) | Likely safe — note the unverified status but no blocking risk |
-| 🔴 `ESCALATE — Unverified Fix` | `recommended_action = ESCALATE` AND the final cycle accepted **at least one `blocking` fix** that Copilot has not re-reviewed | Risky — recommend human review of the last commit before merge |
-
-The classification uses the **final cycle's** Phase 3 decision table:
-
-- Count `accept` decisions where Class = `blocking` (from the final cycle only).
-- If that count ≥ 1 and the final action is `ESCALATE`, classify as `ESCALATE — Unverified Fix`.
-- Otherwise on `ESCALATE`, classify as `ESCALATE — Clean`.
-
-Record the following for Phase 7:
-
-- `termination_status`: one of the three values above
-- `final_cycle_fix_types`: counts of `blocking` / `non-blocking` / `suggestion` / `trivial` accepts
-- `override_applied`: `yes` if the Issue #36 override was used to reach `READY_TO_MERGE`, otherwise `no`
-- `unverified_blocking_commits`: list of commit SHAs from the final cycle when classification is `ESCALATE — Unverified Fix`
-
-On `ESCALATE — Unverified Fix`, still proceed to Phase 6.5 / 6.6 / 7 (CI and summary
-are still useful), but Phase 8 must downgrade merge readiness regardless of CI outcome.
+---
 
 ## Phase 6.5: CI
 
@@ -558,14 +570,14 @@ Post a PR comment through `{GH}:add_issue_comment`:
 ## Review Cycle Summary
 
 ### Route
-- Mode: copilot-review route | human-review route
-- Completion wait: native subscription route | sdk-wrapper subscription route | fallback polling route | human-review (user-signaled)
+- Acquisition provider: copilot-review | codex | external | existing | auto
+- Unified thread handling used: yes
+- Completion wait: native subscription | sdk-wrapper subscription | fallback polling | user-signaled | N/A
 - Watch resource: <resource_uri or N/A>
 - Watch ID: <watch_id or N/A>
 - Notification received: yes | no | N/A
-- Post-notification read: terminal | non-terminal | N/A
 - Unsubscribed: yes | no | N/A
-- Reviewer account: <login or "Copilot"> (human-review route only)
+- Reviewer accounts: <login(s) and thread counts>
 
 ### Changes
 - ...
@@ -584,11 +596,13 @@ Post a PR comment through `{GH}:add_issue_comment`:
 - CI: ...
 - Unresolved threads: ...
 - Cycle status: <termination_status>
-  - one of: `READY_TO_MERGE` | `ESCALATE — Clean` | `ESCALATE — Unverified Fix`
+  - one of: `READY_TO_MERGE` | `ESCALATE — Clean` | `ESCALATE — Unverified Fix` | `WAITING_FOR_REVIEW(provider=...)`
   - On `ESCALATE — Unverified Fix`: include reason, the unverified commit SHA(s),
     and an explicit "Recommendation: human review of the last commit before merge".
+- Re-review mode: structured | message-based | none
+- Re-review status: completed | WAITING_FOR_REVIEW(provider=...) | not requested
 - Final cycle fix types: blocking × N, non-blocking × N, suggestion × N, trivial × N
-- Override applied (Issue #36): yes | no
+- Cycles done: N
 ```
 
 Example for `ESCALATE — Unverified Fix`:
@@ -602,12 +616,14 @@ Example for `ESCALATE — Unverified Fix`:
     (<commit-sha>) that Copilot has not re-reviewed
   - Final cycle fix types: blocking × 1
   - Recommendation: human review of the last commit before merge
-- Override applied (Issue #36): no
+- Re-review mode: structured
+- Re-review status: completed
+- Cycles done: 3
 ```
 
 ### Deferred / Scope-out Items rules
 
-This section MUST list every reject whose reason was `out-of-scope`, `deferred`, or `follow-up` from this cycle, with the follow-up issue number and a one-line summary:
+This section MUST list every reject whose reason was `out-of-scope`, `deferred`, or `follow-up` from this cycle:
 
 ```markdown
 ### Deferred / Scope-out Items
@@ -615,19 +631,16 @@ This section MUST list every reject whose reason was `out-of-scope`, `deferred`,
 - #239 — Improve accessibility for file distribution status and download buttons
 ```
 
-`- None` is only allowed when **all** of the following are true:
+`- None` is only allowed when no reject used reason `out-of-scope` / `deferred` / `follow-up` AND no thread was left unresolved due to Phase U5 step 4.
 
-- No reject in the final Phase 3 decision table used reason `out-of-scope` / `deferred` / `follow-up`.
-- No thread was left unresolved due to Phase 5 step 4 (`untracked — needs follow-up issue`).
-
-If any item was left untracked, list it explicitly so it is not silently dropped:
+If any item was left untracked:
 
 ```markdown
 ### Deferred / Scope-out Items
-- Thread <id> — untracked — needs follow-up issue (Phase 5 step 4)
+- Thread <id> — untracked — needs follow-up issue (Phase U5 step 4)
 ```
 
-`Won't fix` rejects do NOT go in this section — they were decided final and need no follow-up.
+`Won't fix` rejects do NOT go in this section.
 
 ## Phase 8: Merge Gate
 
@@ -645,8 +658,12 @@ If `termination_status` is `🔴 ESCALATE — Unverified Fix`:
 
 1. Do **not** report the PR as ready to merge, even if CI is green and unresolved = 0.
 2. Surface the warning prominently to the user with the unverified commit SHA(s).
-3. If the user still requests a merge, confirm explicitly that they have manually
-   reviewed the unverified blocking fix before proceeding.
+3. If the user still requests a merge, confirm explicitly that they have manually reviewed the unverified blocking fix before proceeding.
+
+If `termination_status` is `WAITING_FOR_REVIEW(provider=...)`:
+
+1. Do **not** report the PR as ready to merge.
+2. Report: "Re-review requested from `<provider>`. Waiting for review before merge."
 
 If any other condition is missing, report it instead of merging.
 
@@ -655,24 +672,27 @@ If any other condition is missing, report it instead of merging.
 In the final response, include:
 
 - PR URL
-- **mode**: `copilot-review route` or `human-review route`
-- which route was used: native subscription, sdk-wrapper subscription, fallback polling, or human-review (user-signaled)
-- `resource_uri` and `watch_id` when available (copilot-review route only)
-- reviewer account login(s) (human-review route)
+- **acquisition provider**: `copilot-review` | `codex` | `external` | `existing` | `auto`
+- **unified thread handling**: always `yes`
+- which completion wait route was used: native subscription, sdk-wrapper subscription, fallback polling, user-signaled, or N/A
+- `resource_uri` and `watch_id` when available (copilot-review only)
+- reviewer account login(s) and thread counts
 - commits pushed
 - CI status
-- unresolved thread count
-- for copilot-review route — subscription evidence:
+- unresolved thread count (after paginated collection)
+- for copilot-review — subscription evidence:
   - whether `{RSRC}:resources/subscribe` was actually used
   - whether `notifications/resources/updated` was received
   - whether `{RSRC}:resources/read` after notification reached a terminal watch state
   - whether `{RSRC}:resources/unsubscribe` completed
-- for human-review route — resolution evidence:
+- for all providers — resolution evidence:
   - number of threads replied via `{GH}:add_reply_to_pull_request_comment`
   - number of threads resolved via `gh api graphql resolveReviewThread`
   - any threads left unresolved (with reason)
 - merge readiness
-- `termination_status` (`READY_TO_MERGE` / `ESCALATE — Clean` / `ESCALATE — Unverified Fix`)
+- `termination_status` (`READY_TO_MERGE` / `ESCALATE — Clean` / `ESCALATE — Unverified Fix` / `WAITING_FOR_REVIEW(provider=...)`)
+- `re-review mode`: structured | message-based | none
+- `cycles_done`
 - on `ESCALATE — Unverified Fix`: the unverified blocking commit SHA(s) and an explicit human-review recommendation
 
 ## Environment Notes: copilot-review-mcp (Confirmed 2026-05-14)

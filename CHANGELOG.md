@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `pr-review-subscribe` skill: `Copilot route / Human Review Mode` の二分法を廃止し、provider 抽象化 + Unified Review Thread Handling に再設計（#67）
+  - `provider = auto | copilot-review | codex | external | existing` を Phase 0 で選択
+  - Phase H1–H6 を廃止し、provider 非依存の Phase U1–U6 (Unified Review Thread Handling) に置き換え
+  - Phase 2/5/6 (CRM-based thread handling) を廃止し、すべての provider で `gh api graphql` による統一スレッド処理を使用
+  - Phase 1S は copilot-review 取得専用として維持
+  - Phase W を新設: codex (`@codex review` コメント投稿) / external / human (ユーザー signal 待ち) に対応
+  - Phase U6 に re-review policy を実装: copilot-review → structured ループ (max cycles)、その他 → message-based (`WAITING_FOR_REVIEW`) で停止
+  - `termination_status` に `WAITING_FOR_REVIEW(provider=...)` を追加
+  - Phase 7 Summary に `acquisition provider`・`re-review mode`・`re-review status`・`cycles done` フィールドを追加
+  - Phase 8 Merge Gate に `WAITING_FOR_REVIEW` 状態のチェックを追加
+- `pr-review-subscribe` skill: Phase U6 に `need_re_review` 判定を追加（PR #68 レビュー指摘対応）
+  - `unresolved = 0` だけで READY_TO_MERGE に進まず、`fix_type` と `blocking` accept の有無で `need_re_review` を判定
+  - `fix_type = logic | spec_change` または `blocking` accept が 1 件以上あれば re-review を要求
+  - `fix_type = none | trivial` の場合のみ即 READY_TO_MERGE
+  - Issue #36 override を「`need_re_review = no` の場合のみ適用」と明確化
+
 ## [0.1.3] - 2026-05-17
 
 ### Changed
