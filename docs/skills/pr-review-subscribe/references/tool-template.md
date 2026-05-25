@@ -43,6 +43,7 @@ Map these placeholders to the available tools in the current runtime:
 {CRM}:get_pr_review_cycle_status
 
 {GH}:add_issue_comment
+{GH}:add_reply_to_pull_request_comment  (Human review route: reply to inline thread; actual operation name varies by MCP server — e.g. reply_to_review_comment)
 
 {RSRC}:list_resources
 {RSRC}:read_resource
