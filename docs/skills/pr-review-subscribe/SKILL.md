@@ -83,8 +83,12 @@ Phase 1S detail (Copilot route):
 
 1. Determine `owner`, `repo`, and `pr`.
 2. **Check CRM availability**: Verify that `{CRM}` tools (e.g., `mcp__copilot-review__*`) are present in the current session's available tool list.
-   - If available: proceed with Copilot route (steps 3–5 below).
    - If unavailable: switch to **Human Review Mode** and go to **Phase H1**.
+   - If available: continue to step 2a.
+2a. **Check for Human Review Mode**: Switch to **Human Review Mode** (Phase H1) if any of the following are true:
+   - The user explicitly invoked the skill with a `human-review` argument or requested processing of a human reviewer's comments.
+   - A human reviewer has already posted review threads that need to be addressed (detected via `gh pr view --json latestReviews` showing `COMMENTED` / `CHANGES_REQUESTED` from a non-Copilot account).
+   - Otherwise: proceed with Copilot route (steps 3–6 below).
 3. Call `{CRM}:get_copilot_review_status`.
 4. If `status = COMPLETED` or `BLOCKED`, go to Phase 2.
 5. If `status = NOT_REQUESTED`, call `{CRM}:request_copilot_review`, then go to Phase 1S.
@@ -279,10 +283,11 @@ Retrieve unresolved inline threads via GraphQL:
 
 ```bash
 gh api graphql -f query='
-  query($owner: String!, $repo: String!, $pr: Int!) {
+  query($owner: String!, $repo: String!, $pr: Int!, $cursor: String) {
     repository(owner: $owner, name: $repo) {
       pullRequest(number: $pr) {
-        reviewThreads(first: 100) {
+        reviewThreads(first: 100, after: $cursor) {
+          pageInfo { hasNextPage endCursor }
           nodes {
             id
             isResolved
@@ -304,8 +309,9 @@ gh api graphql -f query='
 ' -f owner=<owner> -f repo=<repo> -F pr=<pr>
 ```
 
+- If `pageInfo.hasNextPage` is `true`, repeat the query with `-f cursor=<endCursor>` until `hasNextPage = false`. Collect all nodes across pages before proceeding.
 - Collect threads where `isResolved = false`.
-- Record each thread's `id` (GraphQL node ID, `PRIT_...` format — used for resolve mutation) and the root comment's `databaseId` (used for replies).
+- Record each thread's `id` (GraphQL node ID — treat as opaque; observed format is `PRRT_...` — used for resolve mutation) and the root comment's `databaseId` (used for replies).
 - If 0 unresolved threads: proceed to Phase 6.5 (same as Phase 2 routing on 0 threads).
 - Otherwise: proceed to Phase 3.
 
@@ -315,7 +321,7 @@ Route label for Phase 7 report: `human-review route`.
 
 For every reviewed thread:
 
-**Reply** using `{GH}:add_reply_to_pull_request_comment`:
+**Reply** using `{GH}:add_reply_to_pull_request_comment` (map to the actual operation name via `references/tool-template.md` — e.g. `reply_to_review_comment` in some MCP servers):
 - `owner`, `repo`, `pull_number`: as determined in Phase 0
 - `comment_id`: the root comment's `databaseId` from Phase H2
 - `body`: reply text (same content rules as Phase 5)
@@ -328,7 +334,7 @@ gh api graphql -f query='
       thread { id isResolved }
     }
   }
-' -f threadId=<PRIT_node_id>
+' -f threadId=<PRRT_node_id>
 ```
 
 - Apply the same fixed / rejected reply rules as Phase 5 (scope-out requires follow-up issue, etc.).
