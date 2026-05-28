@@ -15,6 +15,8 @@ pnpm add --global mcp-resource-subscriber
 mcp-resource-subscriber --url <mcp-server-url> --uri <resource-uri>
 ```
 
+> **パッケージマネージャー方針**: このリポジトリと README の利用例は pnpm を前提にしています。pnpm がない環境では、先に pnpm を利用できる状態にしてください。
+
 > **Note**: A reference MCP test server used during compatibility verification is also included in this repository (Docker Compose). See the [Lab Server](#lab-server) section below.
 
 ---
