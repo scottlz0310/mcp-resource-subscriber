@@ -10,11 +10,8 @@ CLI probe for MCP `resources/subscribe` — connects to any MCP Streamable HTTP 
 # recommended (no install):
 pnpm dlx mcp-resource-subscriber --url <mcp-server-url> --uri <resource-uri>
 
-# fallback if pnpm is unavailable:
-npx mcp-resource-subscriber --url <mcp-server-url> --uri <resource-uri>
-
 # or install globally:
-npm install -g mcp-resource-subscriber
+pnpm add --global mcp-resource-subscriber
 mcp-resource-subscriber --url <mcp-server-url> --uri <resource-uri>
 ```
 
@@ -40,7 +37,7 @@ mcp-resource-subscriber \
 ```bash
 # Start the test server first:
 docker compose up --build
-# or: npm run dev
+# or: pnpm run dev
 
 mcp-resource-subscriber --url http://127.0.0.1:8089/mcp
 ```
@@ -187,8 +184,8 @@ http://127.0.0.1:8089/mcp
 For local development:
 
 ```bash
-npm install
-npm run dev
+pnpm install --frozen-lockfile
+pnpm run dev
 ```
 
 ## Configuration
@@ -276,7 +273,7 @@ resources/read was received again after the notification
 ## Tests
 
 ```bash
-npm test
+pnpm test
 ```
 
 The test suite verifies:
@@ -292,10 +289,10 @@ The test suite verifies:
 The repository also includes a reusable MCP SDK client that exercises the full subscription flow against a running server:
 
 ```bash
-npm run probe:subscribe -- --url http://127.0.0.1:8089/mcp
+pnpm run probe:subscribe -- --url http://127.0.0.1:8089/mcp
 ```
 
-After `npm run build`, the same client can be run directly with Node:
+After `pnpm run build`, the same client can be run directly with Node:
 
 ```bash
 node dist/src/client/cli.js --url http://127.0.0.1:8089/mcp

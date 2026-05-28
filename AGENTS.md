@@ -12,16 +12,17 @@ The goal is reproducible testing of whether CLI AI agents (Codex, Gemini, Claude
 ## Essential Commands
 
 ```bash
-npm ci                         # install dependencies
-npm run build                  # tsc compile → dist/
-npm test                       # vitest run (tests against in-process server, no Docker needed)
-npm run typecheck              # tsc --noEmit (no output files)
-npm run dev                    # run server locally via tsx (no build step)
-npm run probe:subscribe -- --url http://127.0.0.1:8089/mcp  # run probe client against live server
+pnpm install --frozen-lockfile # install dependencies
+pnpm run build                 # tsc compile → dist/
+pnpm test                      # vitest run (tests against in-process server, no Docker needed)
+pnpm run typecheck             # tsc --noEmit (no output files)
+pnpm run dev                   # run server locally via tsx (no build step)
+pnpm run probe:subscribe -- --url http://127.0.0.1:8089/mcp  # run probe client against live server
 docker compose up --build      # start reference server on port 8089
 ```
 
-**Node requirement**: `>=26.0.0` (enforced in `package.json` engines and CI).
+**Node requirement**: `>=26.2.0` (enforced in `package.json` engines and CI).
+**Package manager**: `pnpm@11.4.0` (pinned by `packageManager`; `pnpm-lock.yaml` is the only lockfile).
 
 ## Architecture
 

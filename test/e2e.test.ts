@@ -7,7 +7,7 @@
  *   MCP_E2E_URL=http://127.0.0.1:8080/mcp/copilot-review \
  *   MCP_E2E_TOKEN=$(gh auth token) \
  *   MCP_E2E_WATCH_ID=<watch_id> \
- *   npx vitest run test/e2e.test.ts
+ *   pnpm vitest run test/e2e.test.ts
  *
  * Levels of verification:
  *   Level 1 – server reachable, capabilities advertise subscribe:true (always)
