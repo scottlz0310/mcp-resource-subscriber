@@ -19,7 +19,7 @@ import {
 import express from "express";
 import { afterEach, describe, expect, it } from "vitest";
 import { extractRecommendedAction, runSubscribeProbe } from "../src/client/probeClient.js";
-import type { TestConfig } from "../src/server/config.js";
+import { configFromEnv, type TestConfig } from "../src/server/config.js";
 import { createMcpHttpApp } from "../src/server/httpServer.js";
 import {
   createInitialReviewStatus,
@@ -300,6 +300,14 @@ async function startActionSequenceServer(
 }
 
 describe("MCP resource subscription probe", () => {
+  it.each([
+    ["adds a leading slash", { MCP_TEST_PATH: "custom-mcp" }, "/custom-mcp"],
+    ["trims trailing slashes", { MCP_TEST_PATH: "/custom-mcp///" }, "/custom-mcp"],
+    ["falls back for blank values", { MCP_TEST_PATH: "   " }, "/mcp"],
+  ])("parses MCP_TEST_PATH: %s", (_name, env, expected) => {
+    expect(configFromEnv(env).mcpPath).toBe(expected);
+  });
+
   it.each([
     ["key-value text", "review_status: IN_PROGRESS\nrecommended_next_action: POLL_AFTER", "POLL_AFTER"],
     ["inline text", 'final: { review_status: "IN_PROGRESS", recommended_next_action: "POLL_AFTER" }', "POLL_AFTER"],

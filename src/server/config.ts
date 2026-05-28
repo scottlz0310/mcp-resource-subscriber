@@ -51,7 +51,7 @@ function parseMcpPath(value: string | undefined, fallback: string): string {
   }
   let path = value.trim();
   if (!path.startsWith("/")) {
-    path = "/" + path;
+    path = `/${path}`;
   }
   path = path.replace(/\/+$/, "");
   return path === "" ? fallback : path;

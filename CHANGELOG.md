@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- リポジトリの package manager を npm から pnpm に移行
+  - `packageManager` で `pnpm@11.4.0` を固定
+  - `package-lock.json` を削除し、`pnpm-lock.yaml` を唯一の lockfile として採用
+  - CI / Docker / lefthook / README / AGENTS.md の実行コマンドを pnpm 前提に更新
 - `pr-review-subscribe` skill: `Copilot route / Human Review Mode` の二分法を廃止し、provider 抽象化 + Unified Review Thread Handling に再設計（#67）
   - `provider = auto | copilot-review | codex | external | existing` を Phase 0 で選択
   - Phase H1–H6 を廃止し、provider 非依存の Phase U1–U6 (Unified Review Thread Handling) に置き換え
