@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-05-29
+
 ### Changed
 
 - リポジトリの package manager を npm から pnpm に移行
@@ -28,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `fix_type = logic | spec_change` または `blocking` accept が 1 件以上あれば re-review を要求
   - `fix_type = none | trivial` の場合のみ即 READY_TO_MERGE
   - Issue #36 override を「`need_re_review = no` の場合のみ適用」と明確化
+
+### Internal
+
+- npm publish を Trusted Publishing (OIDC) に移行（`id-token: write` 追加、`NPM_TOKEN` 撤廃、`npm publish --provenance --access public` に統一）(#72)
+- バージョン文字列を 0.1.4 に同期（`package.json` / `src/server/mcpServer.ts` / `src/client/probeClient.ts`）
 
 ## [0.1.3] - 2026-05-17
 
@@ -92,7 +99,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `src/server/mcpServer.ts` and `src/client/probeClient.ts` contain hardcoded version strings. These must be updated manually on each version bump until dynamic `package.json` reading is added.
 
-[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.0...v0.1.1
