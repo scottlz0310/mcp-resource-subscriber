@@ -1,4 +1,4 @@
-FROM node:26.2.0-alpine AS base
+FROM node:26.3.0-alpine AS base
 ARG PNPM_VERSION=11.4.0
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME/bin:$PATH
