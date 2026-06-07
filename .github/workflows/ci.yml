@@ -22,8 +22,8 @@ jobs:
       - run: pnpm run build
       - run: pnpm run test:coverage
       - uses: codecov/codecov-action@v6
-        continue-on-error: true
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/lcov.info
+          fail_ci_if_error: false
       - run: docker build .
