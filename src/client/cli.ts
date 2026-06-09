@@ -2,57 +2,8 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildErrorJsonOutput, buildJsonOutput } from "./jsonOutput.js";
 import { extractRecommendedAction, runSubscribeProbe } from "./probeClient.js";
-
-export interface JsonOutput {
-  route: string;
-  serverUrl: string | null;
-  resourceUri: string;
-  subscribed: boolean;
-  notificationReceived: boolean;
-  notificationCount: number;
-  unsubscribed: boolean;
-  errorCode: string | null;
-  initialText: string | null;
-  finalText: string | null;
-  recommendedNextAction: string | null;
-}
-
-export function buildJsonOutput(
-  result: Awaited<ReturnType<typeof runSubscribeProbe>>,
-  serverUrl: string,
-  resourceUri: string,
-): JsonOutput {
-  return {
-    route: result.route,
-    serverUrl,
-    resourceUri,
-    subscribed: result.subscribed,
-    notificationReceived: result.route === "subscription",
-    notificationCount: result.notificationCount,
-    unsubscribed: result.unsubscribed,
-    errorCode: result.errorCode,
-    initialText: result.initialText || null,
-    finalText: result.finalText || null,
-    recommendedNextAction: extractRecommendedAction(result.finalText),
-  };
-}
-
-function buildErrorJsonOutput(errorCode: string, serverUrl: string | null, resourceUri: string): JsonOutput {
-  return {
-    route: "failed",
-    serverUrl,
-    resourceUri,
-    subscribed: false,
-    notificationReceived: false,
-    notificationCount: 0,
-    unsubscribed: false,
-    errorCode,
-    initialText: null,
-    finalText: null,
-    recommendedNextAction: null,
-  };
-}
 
 // Default URI for the bundled reference server
 const REVIEW_STATUS_URI = "test://review/status";
@@ -194,12 +145,19 @@ function printResult(result: Awaited<ReturnType<typeof runSubscribeProbe>>, url:
   console.log(`phase-summary route=${result.route} url=${url} uri=${uri}${errorPart}`);
 }
 
+// Capture context outside try so the catch block can report actuals instead of unknowns.
+const jsonMode = args.includes("--json");
+let capturedUrl: string | null = null;
+let capturedUri: string = readOption("uri") ?? process.env.MCP_PROBE_URI ?? REVIEW_STATUS_URI;
+
 try {
   const options = parseOptions();
+  capturedUrl = options.url;
+  capturedUri = options.uri;
 
   if (options.url === null) {
     if (options.json) {
-      process.stdout.write(JSON.stringify(buildErrorJsonOutput("SERVER_URL_UNKNOWN", null, options.uri)) + "\n");
+      process.stdout.write(`${JSON.stringify(buildErrorJsonOutput("SERVER_URL_UNKNOWN", null, options.uri))}\n`);
     } else {
       console.log("error-code SERVER_URL_UNKNOWN");
       console.log("phase-summary route=failed url=unknown error-code=SERVER_URL_UNKNOWN");
@@ -224,7 +182,7 @@ try {
       skipResourceListCheck: options.skipResourceListCheck,
     });
     if (options.json) {
-      process.stdout.write(JSON.stringify(buildJsonOutput(result, options.url, options.uri)) + "\n");
+      process.stdout.write(`${JSON.stringify(buildJsonOutput(result, options.url, options.uri))}\n`);
     } else {
       printResult(result, options.url, options.uri);
     }
@@ -235,8 +193,8 @@ try {
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   console.error(`subscribe-probe failed: ${message}`);
-  if (args.includes("--json")) {
-    process.stdout.write(JSON.stringify(buildErrorJsonOutput("INTERNAL_ERROR", null, "unknown")) + "\n");
+  if (jsonMode) {
+    process.stdout.write(`${JSON.stringify(buildErrorJsonOutput("INTERNAL_ERROR", capturedUrl, capturedUri))}\n`);
   } else {
     console.log("error-code INTERNAL_ERROR");
     console.log("phase-summary route=failed url=unknown error-code=INTERNAL_ERROR");

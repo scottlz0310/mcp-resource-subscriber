@@ -18,7 +18,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import express from "express";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildJsonOutput, type JsonOutput } from "../src/client/cli.js";
+import { buildJsonOutput, type JsonOutput } from "../src/client/jsonOutput.js";
 import { extractRecommendedAction, runSubscribeProbe } from "../src/client/probeClient.js";
 import { configFromEnv, type TestConfig } from "../src/server/config.js";
 import { createMcpHttpApp } from "../src/server/httpServer.js";
