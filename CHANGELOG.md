@@ -115,7 +115,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `src/server/mcpServer.ts` and `src/client/probeClient.ts` contain hardcoded version strings. These must be updated manually on each version bump until dynamic `package.json` reading is added.
 
-[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.1...v0.1.2
