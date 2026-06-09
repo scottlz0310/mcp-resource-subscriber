@@ -64,11 +64,67 @@ mcp-resource-subscriber --url http://127.0.0.1:8089/mcp
                       Env: MCP_PROBE_SKIP_LIST_CHECK=true
   --timeout-ms <ms>   Notification wait timeout in ms (default: 15000)
                       Env: MCP_PROBE_TIMEOUT_MS
+  --json              Emit a single JSON object to stdout instead of line-based output.
+                      Diagnostic messages are written to stderr only.
   --version, -v       Print version and exit
   --help, -h          Print this help and exit
 ```
 
-### Structured output
+### JSON output mode
+
+Pass `--json` to emit a single JSON object to stdout for agent workflow integration:
+
+```bash
+mcp-resource-subscriber \
+  --url http://localhost:3000/mcp \
+  --uri queue://review/re-review-requests \
+  --timeout-ms 900000 \
+  --json
+```
+
+Success output:
+
+```json
+{
+  "route": "subscription",
+  "serverUrl": "http://localhost:3000/mcp",
+  "resourceUri": "queue://review/re-review-requests",
+  "subscribed": true,
+  "notificationReceived": true,
+  "notificationCount": 1,
+  "unsubscribed": true,
+  "errorCode": null,
+  "initialText": "...",
+  "finalText": "...",
+  "recommendedNextAction": null
+}
+```
+
+Failure output (same shape with non-null `errorCode`):
+
+```json
+{
+  "route": "timeout",
+  "serverUrl": "http://localhost:3000/mcp",
+  "resourceUri": "queue://review/re-review-requests",
+  "subscribed": true,
+  "notificationReceived": false,
+  "notificationCount": 0,
+  "unsubscribed": true,
+  "errorCode": "NOTIFICATION_TIMEOUT",
+  "initialText": null,
+  "finalText": null,
+  "recommendedNextAction": null
+}
+```
+
+- `route`: `"subscription"` | `"pre-completion"` | `"timeout"` | `"failed"`
+- `notificationReceived`: `true` when `route === "subscription"`
+- `recommendedNextAction`: extracted from `finalText` if present, otherwise `null`
+- If `finalText` is JSON, callers can parse it themselves
+- Diagnostic warnings (e.g. `--auth-token` flag warning) go to stderr and do not corrupt stdout JSON
+
+### Structured line-based output (default)
 
 Every run emits machine-parseable lines:
 
