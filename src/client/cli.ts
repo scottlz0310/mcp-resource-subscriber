@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildErrorJsonOutput, buildJsonOutput } from "./jsonOutput.js";
 import { extractRecommendedAction, runSubscribeProbe } from "./probeClient.js";
 
 // Default URI for the bundled reference server
@@ -41,6 +42,18 @@ function readOption(name: string): string | undefined {
   return value;
 }
 
+// Throw-safe variant for best-effort context capture outside the try block.
+function peekOption(name: string): string | undefined {
+  const prefix = `--${name}=`;
+  const index = process.argv.findIndex((arg) => arg === `--${name}` || arg.startsWith(prefix));
+  if (index === -1) return undefined;
+  const arg = process.argv[index];
+  if (arg.startsWith(prefix)) return arg.slice(prefix.length);
+  const value = process.argv[index + 1];
+  if (!value || value.startsWith("--")) return undefined;
+  return value;
+}
+
 const args = process.argv.slice(2);
 
 if (args.includes("--help") || args.includes("-h")) {
@@ -48,7 +61,7 @@ if (args.includes("--help") || args.includes("-h")) {
   console.log("");
   console.log("Usage:");
   console.log(
-    "  mcp-resource-subscriber --url <server-url> [--uri <resource-uri>] [--auth-token <tok>] [--skip-resource-list-check] [--timeout-ms <ms>]",
+    "  mcp-resource-subscriber --url <server-url> [--uri <resource-uri>] [--auth-token <tok>] [--skip-resource-list-check] [--timeout-ms <ms>] [--json]",
   );
   console.log("");
   console.log("Options:");
@@ -67,6 +80,8 @@ if (args.includes("--help") || args.includes("-h")) {
   console.log("                      Env: MCP_PROBE_SKIP_LIST_CHECK=true");
   console.log("  --timeout-ms <ms>   Notification wait timeout in ms (default: 15000)");
   console.log("                      Env: MCP_PROBE_TIMEOUT_MS");
+  console.log("  --json              Emit a single JSON object to stdout instead of line-based output.");
+  console.log("                      Diagnostic messages are written to stderr only.");
   console.log("  --version, -v       Print version and exit");
   console.log("  --help, -h          Print this help and exit");
   console.log("");
@@ -78,6 +93,12 @@ if (args.includes("--help") || args.includes("-h")) {
   console.log("  mcp-resource-subscriber --url http://127.0.0.1:8080/mcp/copilot-review \\");
   console.log("    --uri copilot-review://watch/<watch_id> \\");
   console.log("    --timeout-ms 900000");
+  console.log("");
+  console.log("  # JSON output mode (for agent workflow integration):");
+  console.log("  mcp-resource-subscriber --url http://localhost:3000/mcp \\");
+  console.log("    --uri queue://review/re-review-requests \\");
+  console.log("    --timeout-ms 900000 \\");
+  console.log("    --json");
   process.exit(0);
 }
 
@@ -102,7 +123,8 @@ function parseOptions() {
     : undefined;
   const skipResourceListCheck =
     args.includes("--skip-resource-list-check") || process.env.MCP_PROBE_SKIP_LIST_CHECK === "true";
-  return { url, uri, timeoutMs, requestHeaders, skipResourceListCheck, authTokenFromFlag };
+  const json = args.includes("--json");
+  return { url, uri, timeoutMs, requestHeaders, skipResourceListCheck, authTokenFromFlag, json };
 }
 
 function printResult(result: Awaited<ReturnType<typeof runSubscribeProbe>>, url: string, uri: string): void {
@@ -135,12 +157,24 @@ function printResult(result: Awaited<ReturnType<typeof runSubscribeProbe>>, url:
   console.log(`phase-summary route=${result.route} url=${url} uri=${uri}${errorPart}`);
 }
 
+// Capture context outside try so the catch block can report actuals instead of unknowns.
+// Use peekOption (no-throw) so malformed args don't produce a bare stack trace before the try.
+const jsonMode = args.includes("--json");
+let capturedUrl: string | null = peekOption("url") ?? process.env.MCP_PROBE_URL ?? null;
+let capturedUri: string = peekOption("uri") ?? process.env.MCP_PROBE_URI ?? REVIEW_STATUS_URI;
+
 try {
   const options = parseOptions();
+  capturedUrl = options.url;
+  capturedUri = options.uri;
 
   if (options.url === null) {
-    console.log("error-code SERVER_URL_UNKNOWN");
-    console.log("phase-summary route=failed url=unknown error-code=SERVER_URL_UNKNOWN");
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(buildErrorJsonOutput("SERVER_URL_UNKNOWN", null, options.uri))}\n`);
+    } else {
+      console.log("error-code SERVER_URL_UNKNOWN");
+      console.log("phase-summary route=failed url=unknown error-code=SERVER_URL_UNKNOWN");
+    }
     process.exitCode = 1;
   } else {
     if (options.uri === REVIEW_STATUS_URI && !readOption("uri") && !process.env.MCP_PROBE_URI) {
@@ -160,7 +194,11 @@ try {
       requestHeaders: options.requestHeaders,
       skipResourceListCheck: options.skipResourceListCheck,
     });
-    printResult(result, options.url, options.uri);
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(buildJsonOutput(result, options.url, options.uri))}\n`);
+    } else {
+      printResult(result, options.url, options.uri);
+    }
     if (result.errorCode) {
       process.exitCode = 1;
     }
@@ -168,7 +206,11 @@ try {
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   console.error(`subscribe-probe failed: ${message}`);
-  console.log("error-code INTERNAL_ERROR");
-  console.log("phase-summary route=failed url=unknown error-code=INTERNAL_ERROR");
+  if (jsonMode) {
+    process.stdout.write(`${JSON.stringify(buildErrorJsonOutput("INTERNAL_ERROR", capturedUrl, capturedUri))}\n`);
+  } else {
+    console.log("error-code INTERNAL_ERROR");
+    console.log("phase-summary route=failed url=unknown error-code=INTERNAL_ERROR");
+  }
   process.exitCode = 1;
 }

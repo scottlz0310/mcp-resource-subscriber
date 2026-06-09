@@ -18,6 +18,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import express from "express";
 import { afterEach, describe, expect, it } from "vitest";
+import { buildJsonOutput, type JsonOutput } from "../src/client/jsonOutput.js";
 import { extractRecommendedAction, runSubscribeProbe } from "../src/client/probeClient.js";
 import { configFromEnv, type TestConfig } from "../src/server/config.js";
 import { createMcpHttpApp } from "../src/server/httpServer.js";
@@ -572,6 +573,103 @@ describe("MCP resource subscription probe", () => {
     expect(result.route).toBe("timeout");
     expect(result.subscribed).toBe(false);
     expect(result.unsubscribed).toBe(false);
+  });
+
+  describe("--json output mode (buildJsonOutput)", () => {
+    it("emits valid JSON shape on successful subscription", async () => {
+      const logs: string[] = [];
+      const url = await startServer(logs);
+
+      const result = await runSubscribeProbe({ url: url.toString(), timeoutMs: 2_000 });
+      const output = buildJsonOutput(result, url.toString(), REVIEW_STATUS_URI);
+      const json = JSON.parse(JSON.stringify(output)) as JsonOutput;
+
+      expect(json.route).toBe("subscription");
+      expect(json.serverUrl).toBe(url.toString());
+      expect(json.resourceUri).toBe(REVIEW_STATUS_URI);
+      expect(json.subscribed).toBe(true);
+      expect(json.notificationReceived).toBe(true);
+      expect(json.notificationCount).toBe(1);
+      expect(json.unsubscribed).toBe(true);
+      expect(json.errorCode).toBeNull();
+      expect(typeof json.initialText).toBe("string");
+      expect(typeof json.finalText).toBe("string");
+    });
+
+    it("emits valid JSON shape on timeout (failure path)", async () => {
+      const url = await startActionSequenceServer(["initial-text"], []);
+
+      const result = await runSubscribeProbe({ url, uri: REVIEW_STATUS_URI, timeoutMs: 100 });
+      const output = buildJsonOutput(result, url, REVIEW_STATUS_URI);
+      const json = JSON.parse(JSON.stringify(output)) as JsonOutput;
+
+      expect(json.route).toBe("timeout");
+      expect(json.serverUrl).toBe(url);
+      expect(json.resourceUri).toBe(REVIEW_STATUS_URI);
+      expect(json.subscribed).toBe(true);
+      expect(json.notificationReceived).toBe(false);
+      expect(json.notificationCount).toBe(0);
+      expect(json.errorCode).toBe("NOTIFICATION_TIMEOUT");
+      expect(json.finalText).toBeNull();
+    });
+
+    it("emits valid JSON shape when resource is not found", async () => {
+      const logs: string[] = [];
+      const url = await startServer(logs);
+
+      const result = await runSubscribeProbe({
+        url: url.toString(),
+        uri: "test://does-not-exist",
+        timeoutMs: 1_000,
+      });
+      const output = buildJsonOutput(result, url.toString(), "test://does-not-exist");
+      const json = JSON.parse(JSON.stringify(output)) as JsonOutput;
+
+      expect(json.route).toBe("timeout");
+      expect(json.subscribed).toBe(false);
+      expect(json.notificationReceived).toBe(false);
+      expect(json.errorCode).toBe("RESOURCE_NOT_FOUND");
+      expect(json.initialText).toBeNull();
+      expect(json.finalText).toBeNull();
+    });
+
+    it("sets recommendedNextAction from finalText when present", async () => {
+      const url = await startActionSequenceServer(
+        ["initial", JSON.stringify({ recommended_next_action: "READ_REVIEW_THREADS" })],
+        [20],
+      );
+
+      const result = await runSubscribeProbe({ url, uri: REVIEW_STATUS_URI, timeoutMs: 1_000 });
+      const output = buildJsonOutput(result, url, REVIEW_STATUS_URI);
+      const json = JSON.parse(JSON.stringify(output)) as JsonOutput;
+
+      expect(json.recommendedNextAction).toBe("READ_REVIEW_THREADS");
+    });
+
+    it("stdout JSON is valid (serializes without error and round-trips)", async () => {
+      const logs: string[] = [];
+      const url = await startServer(logs);
+
+      const result = await runSubscribeProbe({ url: url.toString(), timeoutMs: 2_000 });
+      const output = buildJsonOutput(result, url.toString(), REVIEW_STATUS_URI);
+      const serialized = JSON.stringify(output);
+
+      expect(() => JSON.parse(serialized)).not.toThrow();
+      const parsed = JSON.parse(serialized) as JsonOutput;
+      expect(Object.keys(parsed)).toEqual([
+        "route",
+        "serverUrl",
+        "resourceUri",
+        "subscribed",
+        "notificationReceived",
+        "notificationCount",
+        "unsubscribed",
+        "errorCode",
+        "initialText",
+        "finalText",
+        "recommendedNextAction",
+      ]);
+    });
   });
 
   it("takes the pre-completion route when resource was already updated before subscription", async () => {
