@@ -42,6 +42,18 @@ function readOption(name: string): string | undefined {
   return value;
 }
 
+// Throw-safe variant for best-effort context capture outside the try block.
+function peekOption(name: string): string | undefined {
+  const prefix = `--${name}=`;
+  const index = process.argv.findIndex((arg) => arg === `--${name}` || arg.startsWith(prefix));
+  if (index === -1) return undefined;
+  const arg = process.argv[index];
+  if (arg.startsWith(prefix)) return arg.slice(prefix.length);
+  const value = process.argv[index + 1];
+  if (!value || value.startsWith("--")) return undefined;
+  return value;
+}
+
 const args = process.argv.slice(2);
 
 if (args.includes("--help") || args.includes("-h")) {
@@ -146,9 +158,10 @@ function printResult(result: Awaited<ReturnType<typeof runSubscribeProbe>>, url:
 }
 
 // Capture context outside try so the catch block can report actuals instead of unknowns.
+// Use peekOption (no-throw) so malformed args don't produce a bare stack trace before the try.
 const jsonMode = args.includes("--json");
-let capturedUrl: string | null = null;
-let capturedUri: string = readOption("uri") ?? process.env.MCP_PROBE_URI ?? REVIEW_STATUS_URI;
+let capturedUrl: string | null = peekOption("url") ?? process.env.MCP_PROBE_URL ?? null;
+let capturedUri: string = peekOption("uri") ?? process.env.MCP_PROBE_URI ?? REVIEW_STATUS_URI;
 
 try {
   const options = parseOptions();

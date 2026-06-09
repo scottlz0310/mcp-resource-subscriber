@@ -7,10 +7,9 @@ import { describe, expect, it } from "vitest";
 import type { JsonOutput } from "../src/client/jsonOutput.js";
 import { createMcpHttpApp } from "../src/server/httpServer.js";
 
-// Requires `pnpm run build` to have been run before executing this test file.
-// Use process.cwd() (project root) so the path is stable regardless of whether
-// this module runs from test/ or dist/test/.
-const CLI_PATH = join(process.cwd(), "dist", "src", "client", "cli.js");
+// Run the TypeScript source directly via tsx so this test suite works on a fresh
+// checkout without a prior `pnpm run build` step.
+const CLI_SRC = join(process.cwd(), "src", "client", "cli.ts");
 const execFileAsync = promisify(execFile);
 
 interface ExecResult {
@@ -21,7 +20,9 @@ interface ExecResult {
 
 async function runCli(args: string[]): Promise<ExecResult> {
   try {
-    const { stdout, stderr } = await execFileAsync("node", [CLI_PATH, ...args], { encoding: "utf8" });
+    const { stdout, stderr } = await execFileAsync("node", ["--import", "tsx/esm", CLI_SRC, ...args], {
+      encoding: "utf8",
+    });
     return { stdout, stderr, exitCode: 0 };
   } catch (error) {
     const err = error as { stdout: string; stderr: string; code: number };
@@ -128,6 +129,34 @@ describe("--json CLI process output", () => {
         .filter((l) => l.trim() !== "");
       expect(lines).toHaveLength(1);
       expect(() => JSON.parse(lines[0])).not.toThrow();
+    } finally {
+      await close();
+    }
+  }, 10_000);
+
+  it("malformed --uri (missing value): stdout is valid JSON, no stack trace", async () => {
+    // --json --uri has no value; peekOption returns undefined (no throw outside try)
+    // readOption inside parseOptions throws; catch produces JSON output
+    const result = await runCli(["--json", "--uri"]);
+
+    expect(result.exitCode).toBe(1);
+    const json = JSON.parse(result.stdout) as JsonOutput;
+    expect(json.errorCode).toBe("INTERNAL_ERROR");
+    expect(json.subscribed).toBe(false);
+    // stdout must not contain a stack trace
+    expect(result.stdout).not.toContain("at ");
+  });
+
+  it("malformed --timeout-ms with known --url: serverUrl preserved in JSON", async () => {
+    const { url, close } = await startTestServer();
+    try {
+      const result = await runCli(["--url", url, "--timeout-ms", "bad", "--json"]);
+
+      expect(result.exitCode).toBe(1);
+      const json = JSON.parse(result.stdout) as JsonOutput;
+      expect(json.errorCode).toBe("INTERNAL_ERROR");
+      // peekOption captures the url before parseOptions throws at timeoutMs validation
+      expect(json.serverUrl).toBe(url);
     } finally {
       await close();
     }
