@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-09
+
+### Added
+
+- `--json` 出力モードを追加（#87 / #86）
+  - `--json` フラグを指定すると、単一の JSON オブジェクトを stdout に出力し、診断メッセージは stderr のみに書き出す
+  - `JsonOutput` 型: `{ route, serverUrl, resourceUri, subscribed, notificationReceived, notificationCount, unsubscribed, errorCode, initialText, finalText, recommendedNextAction }`
+  - 成功時 exit 0、エラー時 exit 1（`errorCode` フィールドに `SERVER_URL_UNKNOWN` / `NOTIFICATION_TIMEOUT` / `INTERNAL_ERROR` 等を反映）
+  - malformed な引数（`--uri` 値なし、`--timeout-ms bad` 等）でも stdout に valid JSON を出力し、スタックトレースを抑止
+  - `src/client/jsonOutput.ts` にトランスフォーム関数（`buildJsonOutput` / `buildErrorJsonOutput`）を副作用なしモジュールとして分離
+
+### Internal
+
+- `test/cli.test.ts` を追加: CLI を子プロセスとして起動し stdout / stderr / exit code を直接検証（8 ケース）
+- CLI サブプロセステストを `node --import tsx/esm` でソース直接起動に変更し、fresh checkout での `pnpm test` 単独実行を保証
+
 ## [0.1.4] - 2026-05-29
 
 ### Changed
@@ -99,7 +115,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `src/server/mcpServer.ts` and `src/client/probeClient.ts` contain hardcoded version strings. These must be updated manually on each version bump until dynamic `package.json` reading is added.
 
-[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.1...v0.1.2

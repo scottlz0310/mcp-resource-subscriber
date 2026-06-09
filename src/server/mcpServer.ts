@@ -33,7 +33,7 @@ export function createProbeServer(config: TestConfig, log: LogSink = () => undef
   const server = new McpServer(
     {
       name: "mcp-resource-subscribe-test",
-      version: "0.1.4",
+      version: "0.2.0",
     },
     {
       capabilities: {
