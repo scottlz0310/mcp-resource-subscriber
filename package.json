@@ -51,7 +51,7 @@
     "@biomejs/biome": "^2.4.16",
     "@types/express": "^5.0.6",
     "express": "^5.2.1",
-    "@types/node": "^25.9.2",
+    "@types/node": "^25.9.3",
     "@vitest/coverage-v8": "^4.1.8",
     "lefthook": "^2.1.9",
     "tsx": "^4.22.4",
