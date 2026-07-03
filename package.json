@@ -54,7 +54,7 @@
     "@types/node": "^25.9.4",
     "@vitest/coverage-v8": "^4.1.9",
     "lefthook": "^2.1.9",
-    "tsx": "^4.22.4",
+    "tsx": "^4.22.5",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   },
