@@ -64,6 +64,25 @@ export function createProbeServer(config: TestConfig, log: LogSink = () => undef
     },
   );
 
+  server.registerTool(
+    "echo_tool",
+    {
+      description:
+        "Testing utility: echoes back the given message as text content. Pass shouldError: true to simulate a tool-level failure (isError: true), for exercising client-side `call` error handling.",
+      inputSchema: z.object({
+        message: z.string().optional(),
+        shouldError: z.boolean().optional(),
+      }),
+    },
+    async (input) => {
+      log(`[tools/call] echo_tool ${JSON.stringify(input)}`);
+      return {
+        content: [{ type: "text", text: input.message ?? "" }],
+        isError: input.shouldError === true,
+      };
+    },
+  );
+
   const scheduleUpdate = () => {
     if (updateTimer || store.get().version >= 2) {
       return;

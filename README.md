@@ -46,6 +46,10 @@ mcp-resource-subscriber --url http://127.0.0.1:8089/mcp
 
 > **Note**: `test://review/status` is the default resource URI and is **only meaningful against the bundled test server**. For any other MCP server, always pass `--uri` explicitly.
 
+### Calling a tool once instead of subscribing
+
+For a single `tools/call` invocation with no subscription/wait, use the `call` subcommand — see [`call` mode](#call-mode-single-toolscall-invocation) below.
+
 ### Options
 
 ```
@@ -179,6 +183,59 @@ Failure output (same shape with non-null `errorCode`):
 - If `finalText` is JSON, callers can parse it themselves
 - Diagnostic warnings (e.g. `--auth-token` flag warning) go to stderr and do not corrupt stdout JSON
 
+### `call` mode (single `tools/call` invocation)
+
+Invoke any MCP tool once and exit — no subscription, no wait. Reuses the same
+`--url` / `--auth-token` / `--login` token cache / `--timeout-ms` / `--json`
+flags as subscribe mode:
+
+```bash
+mcp-resource-subscriber call \
+  --url https://gateway.example/mcp/thread-owl \
+  --tool enqueue_review \
+  --args '{"owner":"scottlz0310","repo":"example","prNumber":123,"reason":"opened"}' \
+  --json
+```
+
+Options specific to `call` mode:
+
+```
+  --tool <name>       MCP tool name to invoke (required)
+  --args <json>       JSON object of tool arguments (default: {})
+```
+
+Exit codes are distinct per outcome, so callers can branch on `$?` alone
+without parsing stdout:
+
+| Exit code | Meaning | `errorCode` examples |
+|---|---|---|
+| `0` | Success | — |
+| `1` | Tool-level error (the tool ran and returned `isError: true`) | `TOOL_ERROR` |
+| `2` | Auth error | `AUTH_LOGIN_REQUIRED`, `AUTH_TIMEOUT`, `AUTH_REFRESH_FAILED`, `AUTH_FAILED` |
+| `3` | Communication / usage error | `SERVER_URL_UNKNOWN`, `TOOL_NAME_REQUIRED`, `INVALID_ARGS`, `CALL_FAILED`, `INTERNAL_ERROR` |
+
+`--json` output shape:
+
+```json
+{
+  "serverUrl": "https://gateway.example/mcp/thread-owl",
+  "tool": "enqueue_review",
+  "isError": false,
+  "errorCode": null,
+  "content": [{ "type": "text", "text": "..." }]
+}
+```
+
+`content` is the raw MCP `CallToolResult.content` array (verbatim from the
+server); parse it yourself if it contains JSON text. Line-based (non-JSON)
+output prints `server-url`, `tool`, `is-error`, `error-code`, and a `content`
+block with the JSON-stringified content array.
+
+> **Note**: an MCP server may itself report "unknown tool name" as a normal
+> tool result with `isError: true` rather than a protocol-level failure (this
+> is what the MCP SDK's reference server implementation does) — such cases
+> surface as exit code `1` / `TOOL_ERROR`, not `3` / `CALL_FAILED`.
+
 ### Structured line-based output (default)
 
 Every run emits machine-parseable lines:
@@ -282,6 +339,8 @@ Examples where subscription behavior matters:
 
 This test server focuses on whether the client notices a resource update, re-runs `resources/read`, and reflects the new content in the agent loop / model context.
 
+This is a statement about the *bundled reference server's* design, not a restriction on the CLI: the [`call` mode](#call-mode-single-toolscall-invocation) is a deliberate, separate escape hatch for callers that need a single `tools/call` invocation against *any* MCP server (e.g. triggering a one-off action tool) without standing up a subscription.
+
 ## Start
 
 ```bash
@@ -357,8 +416,9 @@ The initialize response advertises:
 - `resources/unsubscribe`
 - `notifications/resources/updated`
 - `notifications/resources/list_changed` when `MCP_TEST_SEND_LIST_CHANGED=true`
-
-No tools are implemented.
+- `tools/list`, `tools/call`:
+  - `get_review_status` — returns the current review status (same data as reading `test://review/status`)
+  - `echo_tool` — testing utility for `call` mode; echoes `{ message }` back as text content, or returns `isError: true` when called with `{ shouldError: true }`
 
 ## Logs
 
