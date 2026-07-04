@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-04
+
 ### Added
 
 - mcp-gateway 向け認証トークンの自動取得・キャッシュ・自動更新（#102）
@@ -36,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `test/helpers/mockAuthServer.ts`: mcp-gateway の OAuth surface を模した in-process モック認可サーバー
 - テスト追加: `tokenStore.test.ts` / `oauthClient.test.ts` / `gatewayAuth.test.ts` / `cliAuth.test.ts`（計 30 ケース超）
 - `test/cli.test.ts` の子プロセスを開発者の実トークンキャッシュから分離（`MCP_PROBE_TOKEN_STORE_PATH` を一時パスに固定）
+- バージョン文字列を 0.3.0 に同期（`package.json` / `src/server/mcpServer.ts` / `src/client/probeClient.ts`）
+- `AGENTS.md` を日本語化し、CLI エージェント向けの位置づけ（squirrel-notifier 等からのサブプロセス呼び出し）・バージョン要件・auth 関連テストの説明を最新化
 
 ## [0.2.0] - 2026-06-09
 
