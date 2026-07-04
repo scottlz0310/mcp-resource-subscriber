@@ -154,15 +154,47 @@ describe("gatewayAuth", () => {
       });
       // Mimics a gateway that accepts the connection but never responds:
       // the fetch never resolves on its own, only when its AbortSignal fires.
+      // Rejects with the signal's own `reason` (as real fetch() does) so
+      // this exercises AbortSignal.timeout()'s actual "TimeoutError" rather
+      // than the "AbortError" a manual AbortController.abort() would use.
       const hangingFetch: typeof fetch = (_input, init) =>
         new Promise((_resolve, reject) => {
-          init?.signal?.addEventListener("abort", () => {
-            reject(new DOMException("The operation was aborted.", "AbortError"));
+          const signal = init?.signal;
+          signal?.addEventListener("abort", () => {
+            reject(signal.reason);
           });
         });
       await expect(
         resolveCachedToken(`${server.origin}/mcp`, store, { fetchFn: hangingFetch, timeoutMs: 50 }),
       ).rejects.toThrow(AuthTimeoutError);
+    });
+
+    it("counts lock-wait time against the timeout budget, not just the network calls", async () => {
+      server = await startMockAuthServer();
+      server.validRefreshTokens.add("rt-seed");
+      const origin = server.origin;
+      store.save({
+        origin,
+        clientId: "client-1",
+        accessToken: "at-expired",
+        refreshToken: "rt-seed",
+        expiresAt: Date.now() - 1000,
+      });
+      // Simulates a concurrent process holding BEGIN IMMEDIATE long enough
+      // that lock acquisition alone consumes the entire timeoutMs budget.
+      const slowLockStore: TokenStore = {
+        ...store,
+        withExclusiveLock: async <T>(fn: () => Promise<T>): Promise<T> => {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          return store.withExclusiveLock(fn);
+        },
+      };
+      await expect(resolveCachedToken(`${origin}/mcp`, slowLockStore, { timeoutMs: 50 })).rejects.toThrow(
+        AuthTimeoutError,
+      );
+      // The already-spent budget must fail fast instead of starting a
+      // network call with an already-expired signal.
+      expect(server.counts.refresh).toBe(0);
     });
 
     it("skips the network refresh when another process already refreshed while waiting for the lock", async () => {

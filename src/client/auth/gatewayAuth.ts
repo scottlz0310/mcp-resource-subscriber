@@ -61,9 +61,11 @@ export interface ResolvedAuth {
 export interface GatewayAuthOptions extends PollOptions {
   fetchFn?: FetchLike;
   /**
-   * Overall budget (ms) for the network calls `resolveCachedToken` makes
-   * (endpoint discovery + refresh grant). Undefined means no deadline.
-   * Exceeding it raises `AuthTimeoutError` instead of hanging indefinitely.
+   * Overall budget (ms) for everything `resolveCachedToken` does once a
+   * refresh is needed: waiting for the cross-process refresh lock *and* the
+   * network calls (endpoint discovery + refresh grant). Undefined means no
+   * deadline. Exceeding it raises `AuthTimeoutError` instead of hanging
+   * indefinitely.
    */
   timeoutMs?: number;
 }
@@ -138,9 +140,12 @@ export async function resolveCachedToken(
   // resolveCachedToken runs outside the caller's own request timeout (it
   // happens before runSubscribeProbe even connects), so without its own
   // budget a gateway that accepts the TCP connection but never responds
-  // would hang for undici's default headers timeout (~300s). Bound every
-  // network call below to the same AbortSignal instead.
-  const signal = options.timeoutMs !== undefined ? AbortSignal.timeout(options.timeoutMs) : undefined;
+  // would hang for undici's default headers timeout (~300s). The deadline
+  // is computed now (before lock acquisition) so BEGIN IMMEDIATE's
+  // synchronous, potentially multi-second wait for a concurrent refresh
+  // also counts against it — the AbortSignal below is created from what's
+  // left afterward, not a fresh timeoutMs.
+  const deadline = options.timeoutMs !== undefined ? nowFn() + options.timeoutMs : undefined;
 
   try {
     // The gateway revokes a refresh token's entire rotation family once a
@@ -152,6 +157,20 @@ export async function resolveCachedToken(
     // acquires the lock, skipping the network call if another process
     // already refreshed in the meantime.
     return await store.withExclusiveLock(async () => {
+      let signal: AbortSignal | undefined;
+      if (deadline !== undefined) {
+        const remainingMs = deadline - nowFn();
+        if (remainingMs <= 0) {
+          // Lock acquisition alone consumed the whole budget — fail the
+          // same way a network-call timeout would rather than starting a
+          // network call with an already-expired signal.
+          throw new AuthTimeoutError(
+            `auth resolution for ${origin} did not complete within the ${options.timeoutMs} ms budget (lock acquisition consumed it)`,
+          );
+        }
+        signal = AbortSignal.timeout(remainingMs);
+      }
+
       const latest = store.get(origin);
       if (!latest) {
         throw new AuthLoginRequiredError(
