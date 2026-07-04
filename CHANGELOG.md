@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- mcp-gateway 向け認証トークンの自動取得・キャッシュ・自動更新（#102）
+  - `--login` フラグ: RFC 7591 Dynamic Client Registration → RFC 8628 device authorization flow をツール単体で完結。`user-code` / `verification-uri-complete` を表示してブラウザ承認を待ち、取得したトークンをキャッシュする
+  - トークンキャッシュ: `node:sqlite`（組み込み、追加依存なし）による gateway origin 単位の永続化。保存先は OS state dir（Windows: `%LOCALAPPDATA%`、macOS: `~/Library/Application Support`、Linux: `$XDG_STATE_HOME`）、`MCP_PROBE_TOKEN_STORE_PATH` で上書き可
+  - 自動更新: 購読前に有効期限をチェックし（マージン5分）、期限切れなら refresh grant で無人再取得。gateway の refresh token rotation に対応し、ローテーション後のトークンを即時永続化
+  - エラーコード追加: `AUTH_LOGIN_REQUIRED`（refresh token 失効・要 `--login` 再実行）/ `AUTH_REFRESH_FAILED`（gateway 側一時エラー・リトライ可）
+  - 後方互換: `--auth-token` / `MCP_PROBE_AUTH_TOKEN` の明示指定は常にキャッシュより優先。`--login` 未使用の実行はキャッシュ DB を作成せず従来動作を完全維持
+  - OAuth エンドポイントは RFC 8414 well-known metadata で発見し、未提供時は gateway 固定レイアウト（`/register` / `/device_authorization` / `/token`）にフォールバック
+  - device flow ポーリングは RFC 8628 §3.5 準拠（`slow_down` で interval +5秒、`authorization_pending` で継続）
+  - トークン値は stdout / stderr に一切出力しない
+
+### Internal
+
+- `test/helpers/mockAuthServer.ts`: mcp-gateway の OAuth surface を模した in-process モック認可サーバー
+- テスト追加: `tokenStore.test.ts` / `oauthClient.test.ts` / `gatewayAuth.test.ts` / `cliAuth.test.ts`（計 30 ケース超）
+- `test/cli.test.ts` の子プロセスを開発者の実トークンキャッシュから分離（`MCP_PROBE_TOKEN_STORE_PATH` を一時パスに固定）
+
 ## [0.2.0] - 2026-06-09
 
 ### Added
