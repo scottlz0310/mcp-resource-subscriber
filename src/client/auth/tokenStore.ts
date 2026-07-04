@@ -14,6 +14,21 @@ export interface StoredToken {
   expiresAt: number;
 }
 
+/**
+ * `BEGIN IMMEDIATE` could not acquire the lock within its `busy_timeout`
+ * budget — another process is still holding it. Distinct from errors raised
+ * by `fn` itself.
+ */
+export class LockTimeoutError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "LockTimeoutError";
+  }
+}
+
+/** Default SQLite busy_timeout for this connection (ms); see openTokenStore. */
+const DEFAULT_BUSY_TIMEOUT_MS = 5000;
+
 export interface TokenStore {
   get(origin: string): StoredToken | null;
   save(token: StoredToken): void;
@@ -24,8 +39,16 @@ export interface TokenStore {
    * `BEGIN IMMEDIATE`), so only one process at a time can be mid-refresh for
    * this store. Callers must re-read the store after acquiring the lock:
    * another process may have already refreshed while this one was waiting.
+   *
+   * `BEGIN IMMEDIATE` is a synchronous SQLite call that blocks the event
+   * loop for as long as it waits on a concurrent holder — up to
+   * `timeoutMs` if given (falling back to this connection's default
+   * busy_timeout otherwise), raising `LockTimeoutError` if that elapses
+   * first. This lets callers with their own deadline (e.g. `--timeout-ms`)
+   * bound the wall-clock time lock acquisition itself may consume, not just
+   * `fn`'s async work.
    */
-  withExclusiveLock<T>(fn: () => Promise<T>): Promise<T>;
+  withExclusiveLock<T>(fn: () => Promise<T>, timeoutMs?: number): Promise<T>;
 }
 
 /**
@@ -85,7 +108,7 @@ export function openTokenStore(dbPath: string = defaultTokenStorePath()): TokenS
     chmodSync(dbPath, 0o600);
     // Concurrent CLI invocations may share this DB; wait for locks instead of
     // failing immediately with SQLITE_BUSY.
-    db.exec("PRAGMA busy_timeout = 5000");
+    db.exec(`PRAGMA busy_timeout = ${DEFAULT_BUSY_TIMEOUT_MS}`);
     db.exec(`
       CREATE TABLE IF NOT EXISTS tokens (
         origin TEXT PRIMARY KEY,
@@ -134,11 +157,31 @@ export function openTokenStore(dbPath: string = defaultTokenStorePath()): TokenS
     close(): void {
       db.close();
     },
-    async withExclusiveLock<T>(fn: () => Promise<T>): Promise<T> {
+    async withExclusiveLock<T>(fn: () => Promise<T>, timeoutMs?: number): Promise<T> {
       // BEGIN IMMEDIATE acquires SQLite's RESERVED lock up front (waiting up
       // to busy_timeout for other processes to release it), so it serializes
       // concurrent probes across processes rather than just within this one.
-      db.exec("BEGIN IMMEDIATE");
+      // This wait is a synchronous, blocking SQLite call — when the caller
+      // supplies its own timeoutMs, temporarily lower busy_timeout to that
+      // value so lock acquisition itself cannot silently consume more of
+      // the caller's wall-clock budget than requested.
+      const lockBudgetMs = timeoutMs !== undefined ? Math.max(0, Math.floor(timeoutMs)) : DEFAULT_BUSY_TIMEOUT_MS;
+      if (timeoutMs !== undefined) {
+        db.exec(`PRAGMA busy_timeout = ${lockBudgetMs}`);
+      }
+      try {
+        db.exec("BEGIN IMMEDIATE");
+      } catch (error) {
+        throw new LockTimeoutError(`could not acquire the token store lock within ${lockBudgetMs} ms`, {
+          cause: error,
+        });
+      } finally {
+        // Restore the connection default so this budget doesn't leak into
+        // unrelated store operations sharing it.
+        if (timeoutMs !== undefined) {
+          db.exec(`PRAGMA busy_timeout = ${DEFAULT_BUSY_TIMEOUT_MS}`);
+        }
+      }
       try {
         const result = await fn();
         db.exec("COMMIT");

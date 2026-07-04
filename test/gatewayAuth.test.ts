@@ -197,6 +197,46 @@ describe("gatewayAuth", () => {
       expect(server.counts.refresh).toBe(0);
     });
 
+    it("bounds actual SQLite lock-wait time by timeoutMs instead of the connection's busy_timeout default", async () => {
+      server = await startMockAuthServer();
+      const origin = server.origin;
+      store.save({
+        origin,
+        clientId: "client-1",
+        accessToken: "at-expired",
+        refreshToken: "rt-seed",
+        expiresAt: Date.now() - 1000,
+      });
+      // A second connection to the same file holds BEGIN IMMEDIATE so
+      // `store`'s own lock acquisition below must actually wait on SQLite's
+      // busy_timeout mechanism, not just an application-level mock.
+      const holder = openTokenStore(join(dir, "tokens.db"));
+      let releaseHolder = (): void => {};
+      let resolveAcquired!: () => void;
+      const holderLockAcquired = new Promise<void>((resolve) => {
+        resolveAcquired = resolve;
+      });
+      const holderTask = holder.withExclusiveLock(async () => {
+        resolveAcquired();
+        await new Promise<void>((resolveRelease) => {
+          releaseHolder = resolveRelease;
+        });
+      });
+      await holderLockAcquired;
+      try {
+        const startedAt = Date.now();
+        await expect(resolveCachedToken(`${origin}/mcp`, store, { timeoutMs: 200 })).rejects.toThrow(AuthTimeoutError);
+        // Generous slack for scheduling jitter, but must stay well under the
+        // connection's 5000ms default busy_timeout that caused the original
+        // bug (thread-owl measured ~4.6s against an unbounded busy_timeout).
+        expect(Date.now() - startedAt).toBeLessThan(2000);
+      } finally {
+        releaseHolder();
+        await holderTask;
+        holder.close();
+      }
+    });
+
     it("skips the network refresh when another process already refreshed while waiting for the lock", async () => {
       server = await startMockAuthServer();
       const origin = server.origin;

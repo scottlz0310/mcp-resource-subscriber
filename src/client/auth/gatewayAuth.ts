@@ -9,7 +9,7 @@ import {
   registerClient,
   requestDeviceAuthorization,
 } from "./oauthClient.js";
-import type { TokenStore } from "./tokenStore.js";
+import { LockTimeoutError, type TokenStore } from "./tokenStore.js";
 
 /** Refresh the access token this long before it actually expires. */
 const EXPIRY_MARGIN_MS = 5 * 60 * 1000;
@@ -208,9 +208,9 @@ export async function resolveCachedToken(
         expiresAt: tokens.expiresAt,
       });
       return { token: tokens.accessToken, source: "cache-refreshed" };
-    });
+    }, options.timeoutMs);
   } catch (error) {
-    if (isAbortError(error)) {
+    if (isAbortError(error) || error instanceof LockTimeoutError) {
       throw new AuthTimeoutError(
         `auth resolution for ${origin} did not complete within the ${options.timeoutMs} ms budget`,
         { cause: error },
