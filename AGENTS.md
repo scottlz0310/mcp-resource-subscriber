@@ -2,7 +2,7 @@
 
 ## プロジェクトの目的
 
-本リポジトリは、MCP `resources/subscribe` の**互換性検証スパイク**として開始した — CLI AI エージェント（Codex, Gemini, Claude Code, Crush 等）が MCP resource subscription を正しく処理できるかを再現可能な形でテストするためのもの。この検証フェーズは既に完了しており、現在は以下の 2 つの実運用向けコンポーネントを提供する:
+本リポジトリは、MCP `resources/subscribe` の**互換性検証スパイク**として開始した。CLI AI エージェント（Codex, Gemini, Claude Code, Crush 等）が MCP resource subscription を正しく処理できるかを、再現可能な形でテストするためのものである。この検証フェーズは既に完了しており、現在は以下の 2 つの実運用向けコンポーネントを提供する:
 
 1. **CLI probe**（`mcp-resource-subscriber`、`src/client/cli.ts`）— CLI エージェントのワークフローや外部ツール（例: `squirrel-notifier`）が、MCP resource を subscribe して `notifications/resources/updated` を待ち、結果を構造化された stdout/JSON として報告させるために呼び出す、公開済みのサブプロセス。mcp-gateway 向け認証（`--login` / `--logout`、キャッシュ済みトークンの自動更新）も担い、これらの呼び出し元がトークンを手動で用意する必要をなくす。
 2. **リファレンス MCP Streamable HTTP サーバー**（`src/server/`）— クライアントが subscribe した後に更新される 1 つの resource（`test://review/status`）を公開し、`notifications/resources/updated` を送信する。probe クライアントのローカル / Docker テスト用に維持されており、本番トラフィック向けではない。
