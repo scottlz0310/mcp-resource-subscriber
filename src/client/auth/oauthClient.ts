@@ -70,11 +70,15 @@ async function readOAuthError(response: Response, context: string): Promise<OAut
  * mcp-gateway's fixed layout (/register, /device_authorization, /token) when
  * the metadata document is unavailable or incomplete.
  */
-export async function discoverEndpoints(origin: string, fetchFn: FetchLike = fetch): Promise<OAuthEndpoints> {
+export async function discoverEndpoints(
+  origin: string,
+  fetchFn: FetchLike = fetch,
+  signal?: AbortSignal,
+): Promise<OAuthEndpoints> {
   const metadataUrl = new URL("/.well-known/oauth-authorization-server", origin).href;
   let response: Response;
   try {
-    response = await fetchFn(metadataUrl);
+    response = await fetchFn(metadataUrl, { signal });
   } catch (error) {
     throw new Error(`Failed to reach authorization server at ${origin}: ${String(error)}`, { cause: error });
   }
@@ -232,6 +236,7 @@ export async function refreshTokenGrant(
   clientId: string | null,
   refreshToken: string,
   fetchFn: FetchLike = fetch,
+  signal?: AbortSignal,
 ): Promise<TokenSet> {
   const params = new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken });
   if (clientId) {
@@ -241,6 +246,7 @@ export async function refreshTokenGrant(
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: params.toString(),
+    signal,
   });
   if (!response.ok) {
     throw await readOAuthError(response, "refresh token grant");

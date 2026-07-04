@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { once } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -278,5 +279,27 @@ describe("CLI auth integration", () => {
     expect(result.stdout).toContain(
       `phase-summary route=failed url=${url} uri=test://review/status error-code=AUTH_LOGIN_REQUIRED`,
     );
+  }, 15_000);
+
+  it("AUTH_TIMEOUT when the gateway accepts the connection but never responds", async () => {
+    // A raw HTTP server that never writes a response, simulating a gateway
+    // that accepts the TCP connection but hangs indefinitely.
+    const hangingServer = createServer(() => {});
+    hangingServer.listen(0, "127.0.0.1");
+    await once(hangingServer, "listening");
+    const { port } = hangingServer.address() as AddressInfo;
+    const origin = `http://127.0.0.1:${port}`;
+    try {
+      seedToken(origin, { expiresAt: Date.now() - 1000 });
+      const result = await runCli(["--url", `${origin}/mcp`, "--json", "--timeout-ms", "500"], {
+        MCP_PROBE_TOKEN_STORE_PATH: dbPath,
+      });
+
+      expect(result.exitCode).toBe(1);
+      const json = JSON.parse(result.stdout) as JsonOutput;
+      expect(json.errorCode).toBe("AUTH_TIMEOUT");
+    } finally {
+      await new Promise<void>((resolve, reject) => hangingServer.close((err) => (err ? reject(err) : resolve())));
+    }
   }, 15_000);
 });

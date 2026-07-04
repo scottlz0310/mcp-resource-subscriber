@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AuthLoginRequiredError, loginToGateway, resolveCachedToken } from "./auth/gatewayAuth.js";
+import { AuthLoginRequiredError, AuthTimeoutError, loginToGateway, resolveCachedToken } from "./auth/gatewayAuth.js";
 import { OAuthRequestError } from "./auth/oauthClient.js";
 import { openTokenStore, tokenStoreExists } from "./auth/tokenStore.js";
 import { buildErrorJsonOutput, buildJsonOutput } from "./jsonOutput.js";
@@ -217,10 +217,16 @@ function parseOptions() {
 /**
  * Explicit tokens (--auth-token / MCP_PROBE_AUTH_TOKEN) always win so existing
  * callers keep full control; the login cache is only consulted when no token
- * was provided. May throw AuthLoginRequiredError / OAuthRequestError when the
- * cached token is expired and unattended refresh fails.
+ * was provided. May throw AuthLoginRequiredError / AuthTimeoutError /
+ * OAuthRequestError when the cached token is expired and unattended refresh
+ * fails. `timeoutMs` bounds the network calls this makes so a stalled gateway
+ * cannot hang past the caller's own --timeout-ms budget.
  */
-async function resolveBearerToken(url: string, explicitToken: string | null): Promise<string | null> {
+async function resolveBearerToken(
+  url: string,
+  explicitToken: string | null,
+  timeoutMs: number,
+): Promise<string | null> {
   if (explicitToken !== null) {
     return explicitToken;
   }
@@ -232,7 +238,7 @@ async function resolveBearerToken(url: string, explicitToken: string | null): Pr
   }
   const store = openTokenStore();
   try {
-    const resolved = await resolveCachedToken(url, store);
+    const resolved = await resolveCachedToken(url, store, { timeoutMs });
     if (resolved.source !== "none") {
       console.error(`auth token source: ${resolved.source}`);
     }
@@ -302,11 +308,13 @@ try {
         "warning: --auth-token value is visible in process lists and may be stored in shell history. Prefer MCP_PROBE_AUTH_TOKEN env var.",
       );
     }
-    const bearerToken = await resolveBearerToken(options.url, options.authToken);
+    const authStart = Date.now();
+    const bearerToken = await resolveBearerToken(options.url, options.authToken, options.timeoutMs);
+    const remainingTimeoutMs = Math.max(0, options.timeoutMs - (Date.now() - authStart));
     const result = await runSubscribeProbe({
       url: options.url,
       uri: options.uri,
-      timeoutMs: options.timeoutMs,
+      timeoutMs: remainingTimeoutMs,
       requestHeaders: bearerToken ? { Authorization: `Bearer ${bearerToken}` } : undefined,
       skipResourceListCheck: options.skipResourceListCheck,
     });
@@ -328,6 +336,11 @@ try {
     console.error(
       `hint: run \`mcp-resource-subscriber --login --url ${capturedUrl ?? "<gateway-url>"}\` to re-authenticate`,
     );
+  } else if (error instanceof AuthTimeoutError) {
+    // The gateway accepted the connection but never responded within the
+    // --timeout-ms budget; cached credentials may still be fine, so a plain
+    // retry (unlike AUTH_LOGIN_REQUIRED) is reasonable.
+    errorCode = "AUTH_TIMEOUT";
   } else if (error instanceof OAuthRequestError) {
     // Transient gateway-side refresh failure (5xx / temporarily_unavailable);
     // the refresh token was restored server-side, so a plain retry is enough.

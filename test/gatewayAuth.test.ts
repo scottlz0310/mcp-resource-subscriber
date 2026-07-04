@@ -2,7 +2,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AuthLoginRequiredError, loginToGateway, resolveCachedToken } from "../src/client/auth/gatewayAuth.js";
+import {
+  AuthLoginRequiredError,
+  AuthTimeoutError,
+  loginToGateway,
+  resolveCachedToken,
+} from "../src/client/auth/gatewayAuth.js";
 import { OAuthRequestError } from "../src/client/auth/oauthClient.js";
 import { openTokenStore, type TokenStore } from "../src/client/auth/tokenStore.js";
 import { type MockAuthServer, startMockAuthServer } from "./helpers/mockAuthServer.js";
@@ -165,6 +170,100 @@ describe("gatewayAuth", () => {
         expiresAt: Date.now() - 1000,
       });
       await expect(resolveCachedToken(`${server.origin}/mcp`, store)).rejects.toThrow(AuthLoginRequiredError);
+    });
+
+    it("raises AuthTimeoutError instead of hanging when the network calls exceed timeoutMs", async () => {
+      server = await startMockAuthServer();
+      store.save({
+        origin: server.origin,
+        clientId: "client-1",
+        accessToken: "at-expired",
+        refreshToken: "rt-seed",
+        expiresAt: Date.now() - 1000,
+      });
+      // Mimics a gateway that accepts the connection but never responds:
+      // the fetch never resolves on its own, only when its AbortSignal fires.
+      // Rejects with the signal's own `reason` (as real fetch() does) so
+      // this exercises AbortSignal.timeout()'s actual "TimeoutError" rather
+      // than the "AbortError" a manual AbortController.abort() would use.
+      const hangingFetch: typeof fetch = (_input, init) =>
+        new Promise((_resolve, reject) => {
+          const signal = init?.signal;
+          signal?.addEventListener("abort", () => {
+            reject(signal.reason);
+          });
+        });
+      await expect(
+        resolveCachedToken(`${server.origin}/mcp`, store, { fetchFn: hangingFetch, timeoutMs: 50 }),
+      ).rejects.toThrow(AuthTimeoutError);
+    });
+
+    it("counts lock-wait time against the timeout budget, not just the network calls", async () => {
+      server = await startMockAuthServer();
+      server.validRefreshTokens.add("rt-seed");
+      const origin = server.origin;
+      store.save({
+        origin,
+        clientId: "client-1",
+        accessToken: "at-expired",
+        refreshToken: "rt-seed",
+        expiresAt: Date.now() - 1000,
+      });
+      // Simulates a concurrent process holding BEGIN IMMEDIATE long enough
+      // that lock acquisition alone consumes the entire timeoutMs budget.
+      const slowLockStore: TokenStore = {
+        ...store,
+        withExclusiveLock: async <T>(fn: () => Promise<T>): Promise<T> => {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          return store.withExclusiveLock(fn);
+        },
+      };
+      await expect(resolveCachedToken(`${origin}/mcp`, slowLockStore, { timeoutMs: 50 })).rejects.toThrow(
+        AuthTimeoutError,
+      );
+      // The already-spent budget must fail fast instead of starting a
+      // network call with an already-expired signal.
+      expect(server.counts.refresh).toBe(0);
+    });
+
+    it("bounds actual SQLite lock-wait time by timeoutMs instead of the connection's busy_timeout default", async () => {
+      server = await startMockAuthServer();
+      const origin = server.origin;
+      store.save({
+        origin,
+        clientId: "client-1",
+        accessToken: "at-expired",
+        refreshToken: "rt-seed",
+        expiresAt: Date.now() - 1000,
+      });
+      // A second connection to the same file holds BEGIN IMMEDIATE so
+      // `store`'s own lock acquisition below must actually wait on SQLite's
+      // busy_timeout mechanism, not just an application-level mock.
+      const holder = openTokenStore(join(dir, "tokens.db"));
+      let releaseHolder = (): void => {};
+      let resolveAcquired!: () => void;
+      const holderLockAcquired = new Promise<void>((resolve) => {
+        resolveAcquired = resolve;
+      });
+      const holderTask = holder.withExclusiveLock(async () => {
+        resolveAcquired();
+        await new Promise<void>((resolveRelease) => {
+          releaseHolder = resolveRelease;
+        });
+      });
+      await holderLockAcquired;
+      try {
+        const startedAt = Date.now();
+        await expect(resolveCachedToken(`${origin}/mcp`, store, { timeoutMs: 200 })).rejects.toThrow(AuthTimeoutError);
+        // Generous slack for scheduling jitter, but must stay well under the
+        // connection's 5000ms default busy_timeout that caused the original
+        // bug (thread-owl measured ~4.6s against an unbounded busy_timeout).
+        expect(Date.now() - startedAt).toBeLessThan(2000);
+      } finally {
+        releaseHolder();
+        await holderTask;
+        holder.close();
+      }
     });
 
     it("skips the network refresh when another process already refreshed while waiting for the lock", async () => {

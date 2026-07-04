@@ -39,7 +39,7 @@ src/
     probeClient.ts   — runSubscribeProbe(): SDK client that exercises the full flow, returns typed result
     cli.ts           — published bin entry; supports --url, --uri, --auth-token, --login, --logout, --skip-resource-list-check, --timeout-ms
     auth/
-      tokenStore.ts  — node:sqlite token cache (one row per gateway origin, OS state dir, 0600)
+      tokenStore.ts  — node:sqlite token cache (one row per gateway origin, OS state dir, 0600); withExclusiveLock() accepts an optional timeoutMs that temporarily lowers busy_timeout so BEGIN IMMEDIATE's synchronous wait cannot exceed it (raises LockTimeoutError)
       oauthClient.ts — RFC 8414 discovery / RFC 7591 DCR / RFC 8628 device flow / refresh grant (fetch + sleep injectable)
       gatewayAuth.ts — loginToGateway() and resolveCachedToken() (auto-refresh with rotation persistence)
 
@@ -106,7 +106,7 @@ Three test cases:
 
 `src/client/cli.ts` is the published bin entry (`dist/src/client/cli.js`). It supports `--url`, `--uri`, `--auth-token`, `--login`, `--logout`, `--skip-resource-list-check`, `--timeout-ms`, `--version`, and `--help`. The actual probe functionality is in `src/client/probeClient.ts`.
 
-**Gateway auth precedence** (`src/client/auth/`): explicit `--auth-token` / `MCP_PROBE_AUTH_TOKEN` always wins; otherwise the SQLite token cache for the `--url` origin is consulted (auto-refresh with rotation persistence); probe runs never create the cache — only `--login` does. `MCP_PROBE_TOKEN_STORE_PATH` overrides the cache path (tests rely on this for isolation). `--logout` removes the cached entry for `--url`'s origin (no-op if the store doesn't exist yet). `invalid_client` / `unauthorized_client` from the gateway (e.g. after a rebuild) are treated as `AuthLoginRequiredError`, and `loginToGateway` auto-falls-back to re-registering when the cached `client_id` is rejected.
+**Gateway auth precedence** (`src/client/auth/`): explicit `--auth-token` / `MCP_PROBE_AUTH_TOKEN` always wins; otherwise the SQLite token cache for the `--url` origin is consulted (auto-refresh with rotation persistence); probe runs never create the cache — only `--login` does. `MCP_PROBE_TOKEN_STORE_PATH` overrides the cache path (tests rely on this for isolation). `--logout` removes the cached entry for `--url`'s origin (no-op if the store doesn't exist yet). `invalid_client` / `unauthorized_client` from the gateway (e.g. after a rebuild) are treated as `AuthLoginRequiredError`, and `loginToGateway` auto-falls-back to re-registering when the cached `client_id` is rejected. `resolveCachedToken`'s refresh path — cross-process lock wait *and* network calls (endpoint discovery + refresh grant) — is bounded by the same `--timeout-ms` budget: the deadline is computed before `withExclusiveLock()`, which itself receives that `timeoutMs` and temporarily lowers SQLite's `busy_timeout` so `BEGIN IMMEDIATE`'s synchronous wait cannot silently exceed it (raising `LockTimeoutError` otherwise). The `AbortSignal.timeout()` passed to the network calls then uses whatever budget remains after lock acquisition (already-spent budget fails fast with `AuthTimeoutError` instead of starting a doomed network call). Exceeding either bound raises `AuthTimeoutError` → `error-code AUTH_TIMEOUT`, and the CLI subtracts the elapsed auth time from the budget it passes to `runSubscribeProbe`.
 
 ## Secret and Log Handling
 
