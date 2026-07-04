@@ -102,36 +102,52 @@ export async function resolveCachedToken(
       `cached access token for ${origin} is expired and no refresh token is available; run --login again`,
     );
   }
-  const endpoints = await discoverEndpoints(origin, fetchFn);
-  let tokens: Awaited<ReturnType<typeof refreshTokenGrant>>;
-  try {
-    tokens = await refreshTokenGrant(endpoints, cached.clientId, cached.refreshToken, fetchFn);
-  } catch (error) {
-    if (error instanceof OAuthRequestError && error.oauthError === "invalid_grant") {
-      // Refresh tokens are single-use: a concurrent probe process may have
-      // already rotated this one and persisted a fresh access token before we
-      // hit invalid_grant. Re-read the store before forcing a re-login — if
-      // it now holds a different refresh token than the one we presented,
-      // that process won the race and its saved access token is usable.
-      const latest = store.get(origin);
-      if (latest?.refreshToken && latest.refreshToken !== cached.refreshToken) {
-        return { token: latest.accessToken, source: "cache-refreshed" };
-      }
+
+  // The gateway revokes a refresh token's entire rotation family once a
+  // consumed token is re-presented, so a concurrent probe cannot safely
+  // recover after the fact by adopting whatever the winner last saved — its
+  // *next* refresh would still fail. Serialize refreshes for this origin
+  // across processes instead: only the lock holder may present a refresh
+  // token to the gateway, and every waiter re-reads the store once it
+  // acquires the lock, skipping the network call if another process already
+  // refreshed in the meantime.
+  return store.withExclusiveLock(async () => {
+    const latest = store.get(origin);
+    if (!latest) {
       throw new AuthLoginRequiredError(
-        `gateway ${origin} rejected the cached refresh token (invalid_grant); run --login again`,
-        { cause: error },
+        `cached access token for ${origin} is expired and no refresh token is available; run --login again`,
       );
     }
-    throw error;
-  }
-  store.save({
-    origin,
-    clientId: cached.clientId,
-    accessToken: tokens.accessToken,
-    // The gateway rotates refresh tokens; keep the old one only if the
-    // response omitted a replacement.
-    refreshToken: tokens.refreshToken ?? cached.refreshToken,
-    expiresAt: tokens.expiresAt,
+    if (latest.expiresAt - EXPIRY_MARGIN_MS > nowFn()) {
+      return { token: latest.accessToken, source: "cache-refreshed" };
+    }
+    if (!latest.refreshToken) {
+      throw new AuthLoginRequiredError(
+        `cached access token for ${origin} is expired and no refresh token is available; run --login again`,
+      );
+    }
+    const endpoints = await discoverEndpoints(origin, fetchFn);
+    let tokens: Awaited<ReturnType<typeof refreshTokenGrant>>;
+    try {
+      tokens = await refreshTokenGrant(endpoints, latest.clientId, latest.refreshToken, fetchFn);
+    } catch (error) {
+      if (error instanceof OAuthRequestError && error.oauthError === "invalid_grant") {
+        throw new AuthLoginRequiredError(
+          `gateway ${origin} rejected the cached refresh token (invalid_grant); run --login again`,
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+    store.save({
+      origin,
+      clientId: latest.clientId,
+      accessToken: tokens.accessToken,
+      // The gateway rotates refresh tokens; keep the old one only if the
+      // response omitted a replacement.
+      refreshToken: tokens.refreshToken ?? latest.refreshToken,
+      expiresAt: tokens.expiresAt,
+    });
+    return { token: tokens.accessToken, source: "cache-refreshed" };
   });
-  return { token: tokens.accessToken, source: "cache-refreshed" };
 }

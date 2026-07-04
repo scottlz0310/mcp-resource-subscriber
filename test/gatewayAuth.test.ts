@@ -138,13 +138,9 @@ describe("gatewayAuth", () => {
       await expect(resolveCachedToken(`${server.origin}/mcp`, store)).rejects.toThrow(AuthLoginRequiredError);
     });
 
-    it("adopts a refresh token another process already rotated instead of forcing a re-login (TOCTOU)", async () => {
+    it("skips the network refresh when another process already refreshed while waiting for the lock", async () => {
       server = await startMockAuthServer();
       const origin = server.origin;
-      // "rt-seed" is intentionally never added to validRefreshTokens: this
-      // simulates a concurrent probe process having already consumed and
-      // rotated it moments before our own refresh request reaches the
-      // gateway, so ours comes back invalid_grant.
       store.save({
         origin,
         clientId: "client-1",
@@ -152,12 +148,18 @@ describe("gatewayAuth", () => {
         refreshToken: "rt-seed",
         expiresAt: Date.now() - 1000,
       });
-      const rawFetch = fetch;
-      const fetchFn: typeof fetch = async (input, init) => {
-        const response = await rawFetch(input, init);
-        if (typeof input === "string" && input.endsWith("/token") && !response.ok) {
-          // The winning process persists its rotated tokens right as our
-          // request fails — exercising the re-read-before-giving-up path.
+      // Wraps the real store so the re-check inside withExclusiveLock
+      // observes another process having already refreshed and persisted
+      // fresh tokens while this call was waiting for the lock.
+      let checkedInsideLock = false;
+      const winnerAwareStore: TokenStore = {
+        ...store,
+        get(o: string) {
+          const result = store.get(o);
+          if (!checkedInsideLock) {
+            checkedInsideLock = true;
+            return result;
+          }
           store.save({
             origin,
             clientId: "client-1",
@@ -165,13 +167,41 @@ describe("gatewayAuth", () => {
             refreshToken: "rt-winner",
             expiresAt: Date.now() + 60 * 60 * 1000,
           });
-        }
-        return response;
+          return store.get(o);
+        },
       };
-      const resolved = await resolveCachedToken(`${server.origin}/mcp`, store, { fetchFn });
+      const resolved = await resolveCachedToken(`${origin}/mcp`, winnerAwareStore);
       expect(resolved).toEqual({ token: "at-winner", source: "cache-refreshed" });
-      // The winner's own save() must not be clobbered by the loser's request.
-      expect(store.get(server.origin)?.refreshToken).toBe("rt-winner");
+      // The network refresh must have been skipped entirely.
+      expect(server.counts.refresh).toBe(0);
+    });
+
+    it("keeps the rotated refresh token valid for the next refresh (no family revoke from a double presentation)", async () => {
+      server = await startMockAuthServer();
+      server.validRefreshTokens.add("rt-seed");
+      const origin = server.origin;
+      store.save({
+        origin,
+        clientId: "client-1",
+        accessToken: "at-expired",
+        refreshToken: "rt-seed",
+        expiresAt: Date.now() - 1000,
+      });
+      const first = await resolveCachedToken(`${origin}/mcp`, store);
+      expect(first.source).toBe("cache-refreshed");
+      const rotated = store.get(origin);
+      if (!rotated) {
+        throw new Error("expected a stored token after the first refresh");
+      }
+      expect(rotated.refreshToken).not.toBe("rt-seed");
+
+      // Force the (already-fresh) cached entry to look expired again to
+      // exercise a second refresh with the rotated token — this only
+      // succeeds if "rt-seed" was never presented to the gateway twice.
+      store.save({ ...rotated, expiresAt: Date.now() - 1000 });
+      const second = await resolveCachedToken(`${origin}/mcp`, store);
+      expect(second.source).toBe("cache-refreshed");
+      expect(server.counts.refresh).toBe(2);
     });
 
     it("propagates transient gateway errors so callers can retry instead of re-authenticating", async () => {

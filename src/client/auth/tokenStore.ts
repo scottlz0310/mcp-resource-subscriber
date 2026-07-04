@@ -19,6 +19,13 @@ export interface TokenStore {
   save(token: StoredToken): void;
   delete(origin: string): void;
   close(): void;
+  /**
+   * Runs `fn` while holding a cross-process exclusive lock (SQLite
+   * `BEGIN IMMEDIATE`), so only one process at a time can be mid-refresh for
+   * this store. Callers must re-read the store after acquiring the lock:
+   * another process may have already refreshed while this one was waiting.
+   */
+  withExclusiveLock<T>(fn: () => Promise<T>): Promise<T>;
 }
 
 /**
@@ -126,6 +133,24 @@ export function openTokenStore(dbPath: string = defaultTokenStorePath()): TokenS
     },
     close(): void {
       db.close();
+    },
+    async withExclusiveLock<T>(fn: () => Promise<T>): Promise<T> {
+      // BEGIN IMMEDIATE acquires SQLite's RESERVED lock up front (waiting up
+      // to busy_timeout for other processes to release it), so it serializes
+      // concurrent probes across processes rather than just within this one.
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const result = await fn();
+        db.exec("COMMIT");
+        return result;
+      } catch (error) {
+        try {
+          db.exec("ROLLBACK");
+        } catch {
+          // Connection may already be out of a transaction (e.g. closed).
+        }
+        throw error;
+      }
     },
   };
 }
