@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-04
+
 ### Added
 
 - mcp-gateway 向け認証トークンの自動取得・キャッシュ・自動更新（#102）
@@ -36,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `test/helpers/mockAuthServer.ts`: mcp-gateway の OAuth surface を模した in-process モック認可サーバー
 - テスト追加: `tokenStore.test.ts` / `oauthClient.test.ts` / `gatewayAuth.test.ts` / `cliAuth.test.ts`（計 30 ケース超）
 - `test/cli.test.ts` の子プロセスを開発者の実トークンキャッシュから分離（`MCP_PROBE_TOKEN_STORE_PATH` を一時パスに固定）
+- バージョン文字列を 0.3.0 に同期（`package.json` / `src/server/mcpServer.ts` / `src/client/probeClient.ts`）
+- `AGENTS.md` を日本語化し、CLI エージェント向けの位置づけ（squirrel-notifier 等からのサブプロセス呼び出し）・バージョン要件・auth 関連テストの説明を最新化
 
 ## [0.2.0] - 2026-06-09
 
@@ -145,7 +149,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `src/server/mcpServer.ts` and `src/client/probeClient.ts` contain hardcoded version strings. These must be updated manually on each version bump until dynamic `package.json` reading is added.
 
-[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.2...v0.1.3
