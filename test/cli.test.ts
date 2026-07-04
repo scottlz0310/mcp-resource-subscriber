@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
@@ -22,6 +23,13 @@ async function runCli(args: string[]): Promise<ExecResult> {
   try {
     const { stdout, stderr } = await execFileAsync("node", ["--import", "tsx/esm", CLI_SRC, ...args], {
       encoding: "utf8",
+      env: {
+        ...process.env,
+        // Point at a non-existent store so these tests never touch (or create)
+        // the developer's real login cache.
+        MCP_PROBE_TOKEN_STORE_PATH: join(tmpdir(), "mrs-cli-test-absent", "tokens.db"),
+        MCP_PROBE_AUTH_TOKEN: undefined,
+      },
     });
     return { stdout, stderr, exitCode: 0 };
   } catch (error) {

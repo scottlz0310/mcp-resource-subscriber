@@ -37,7 +37,11 @@ src/
     logger.ts        — createConsoleLogger(config): returns a LogSink that outputs all lines unless logLevel is 'silent' (no level hierarchy filtering)
   client/
     probeClient.ts   — runSubscribeProbe(): SDK client that exercises the full flow, returns typed result
-    cli.ts           — published bin entry; supports --url, --uri, --auth-token, --skip-resource-list-check, --timeout-ms
+    cli.ts           — published bin entry; supports --url, --uri, --auth-token, --login, --skip-resource-list-check, --timeout-ms
+    auth/
+      tokenStore.ts  — node:sqlite token cache (one row per gateway origin, OS state dir, 0600)
+      oauthClient.ts — RFC 8414 discovery / RFC 7591 DCR / RFC 8628 device flow / refresh grant (fetch + sleep injectable)
+      gatewayAuth.ts — loginToGateway() and resolveCachedToken() (auto-refresh with rotation persistence)
 
 scripts/
   subscribe-client.ts  — thin wrapper that calls runSubscribeProbe() with CLI args, prints result
@@ -45,6 +49,11 @@ scripts/
 test/
   mcp-resource-subscribe.test.ts  — vitest integration tests (spin up in-process server on port 0)
   e2e.test.ts                     — E2E tests against external copilot-review-mcp server (requires env vars)
+  tokenStore.test.ts              — token cache CRUD against a temp SQLite file
+  oauthClient.test.ts             — device flow / refresh against an in-process mock authorization server
+  gatewayAuth.test.ts             — login + cached-token resolution (refresh, rotation, re-login errors)
+  cliAuth.test.ts                 — CLI subprocess auth integration (--login, cache precedence, AUTH_LOGIN_REQUIRED)
+  helpers/mockAuthServer.ts       — express mock of mcp-gateway's OAuth surface
 ```
 
 ## Key Patterns
@@ -95,7 +104,9 @@ Three test cases:
 
 ## CLI Status
 
-`src/client/cli.ts` is the published bin entry (`dist/src/client/cli.js`). It supports `--url`, `--uri`, `--auth-token`, `--skip-resource-list-check`, `--timeout-ms`, `--version`, and `--help`. The actual probe functionality is in `src/client/probeClient.ts`.
+`src/client/cli.ts` is the published bin entry (`dist/src/client/cli.js`). It supports `--url`, `--uri`, `--auth-token`, `--login`, `--skip-resource-list-check`, `--timeout-ms`, `--version`, and `--help`. The actual probe functionality is in `src/client/probeClient.ts`.
+
+**Gateway auth precedence** (`src/client/auth/`): explicit `--auth-token` / `MCP_PROBE_AUTH_TOKEN` always wins; otherwise the SQLite token cache for the `--url` origin is consulted (auto-refresh with rotation persistence); probe runs never create the cache — only `--login` does. `MCP_PROBE_TOKEN_STORE_PATH` overrides the cache path (tests rely on this for isolation).
 
 ## Secret and Log Handling
 

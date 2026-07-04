@@ -58,6 +58,10 @@ mcp-resource-subscriber --url http://127.0.0.1:8089/mcp
                       Prefer MCP_PROBE_AUTH_TOKEN env var (flag is visible in
                       process lists and may be stored in shell history)
                       Env: MCP_PROBE_AUTH_TOKEN (recommended)
+  --login             Interactive device-flow login (RFC 8628) against the
+                      gateway serving --url. Caches the issued tokens so later
+                      runs authenticate and refresh automatically.
+                      Cache path env: MCP_PROBE_TOKEN_STORE_PATH
   --skip-resource-list-check
                       Skip resources/list and assume the URI exists.
                       Use for servers with dynamic resources not in list.
@@ -69,6 +73,44 @@ mcp-resource-subscriber --url http://127.0.0.1:8089/mcp
   --version, -v       Print version and exit
   --help, -h          Print this help and exit
 ```
+
+### Gateway authentication (`--login`)
+
+When subscribing through an [mcp-gateway](https://github.com/scottlz0310/mcp-gateway), run a one-time
+interactive login instead of provisioning `MCP_PROBE_AUTH_TOKEN` by hand:
+
+```bash
+mcp-resource-subscriber --login --url http://127.0.0.1:8080/mcp/subscribe-probe
+```
+
+This performs RFC 7591 dynamic client registration and the RFC 8628 device
+authorization flow against the gateway origin: it prints a `user-code` and a
+`verification-uri-complete` line, waits while you approve the device in a
+browser, then caches the issued `access_token` / `refresh_token`.
+
+Later probe runs against the same origin then work unattended:
+
+1. An explicit `--auth-token` / `MCP_PROBE_AUTH_TOKEN` always wins and skips the cache
+   (existing callers such as `MCP_PROBE_AUTH_TOKEN=$(gh auth token)` keep working unchanged).
+2. Otherwise a cached token for the `--url` origin is used while still fresh.
+3. An expired cached token is renewed automatically via the refresh grant.
+   The gateway rotates refresh tokens on every renewal; the rotated token is persisted immediately.
+4. If the refresh token itself is rejected (`invalid_grant`), the run fails with
+   `error-code AUTH_LOGIN_REQUIRED` — run `--login` once more. Transient gateway
+   errors during refresh fail with `AUTH_REFRESH_FAILED` and can simply be retried.
+
+Runs that never used `--login` do not create the cache and behave exactly as before.
+
+The token cache is a SQLite database (one row per gateway origin) stored under the
+OS state directory, owner-only permissions:
+
+| OS | Default path |
+|----|--------------|
+| Windows | `%LOCALAPPDATA%\mcp-resource-subscriber\tokens.db` |
+| macOS | `~/Library/Application Support/mcp-resource-subscriber/tokens.db` |
+| Linux | `$XDG_STATE_HOME/mcp-resource-subscriber/tokens.db` (fallback `~/.local/state/...`) |
+
+Override with `MCP_PROBE_TOKEN_STORE_PATH`. Token values are never printed to stdout/stderr.
 
 ### JSON output mode
 

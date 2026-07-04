@@ -2,6 +2,9 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { AuthLoginRequiredError, loginToGateway, resolveCachedToken } from "./auth/gatewayAuth.js";
+import { OAuthRequestError } from "./auth/oauthClient.js";
+import { openTokenStore, tokenStoreExists } from "./auth/tokenStore.js";
 import { buildErrorJsonOutput, buildJsonOutput } from "./jsonOutput.js";
 import { extractRecommendedAction, runSubscribeProbe } from "./probeClient.js";
 
@@ -74,6 +77,12 @@ if (args.includes("--help") || args.includes("-h")) {
   console.log("                      Prefer MCP_PROBE_AUTH_TOKEN env var. Command-line flags");
   console.log("                      are visible in process lists and may be stored in shell");
   console.log("                      history. Env: MCP_PROBE_AUTH_TOKEN (recommended)");
+  console.log("  --login             Interactive device-flow login (RFC 8628) against the");
+  console.log("                      gateway serving --url. Prints a verification URI to");
+  console.log("                      approve in a browser, then caches the issued tokens so");
+  console.log("                      later runs authenticate and refresh automatically.");
+  console.log("                      Explicit --auth-token / MCP_PROBE_AUTH_TOKEN always");
+  console.log("                      override the cache. Cache: MCP_PROBE_TOKEN_STORE_PATH");
   console.log("  --skip-resource-list-check");
   console.log("                      Skip resources/list and assume the URI exists.");
   console.log("                      Use for servers with dynamic resources not in list.");
@@ -99,12 +108,49 @@ if (args.includes("--help") || args.includes("-h")) {
   console.log("    --uri queue://review/re-review-requests \\");
   console.log("    --timeout-ms 900000 \\");
   console.log("    --json");
+  console.log("");
+  console.log("  # One-time interactive login against an mcp-gateway:");
+  console.log("  mcp-resource-subscriber --login --url http://127.0.0.1:8080/mcp/subscribe-probe");
   process.exit(0);
 }
 
 if (args.includes("--version") || args.includes("-v")) {
   console.log(`${pkg.name} v${pkg.version}`);
   process.exit(0);
+}
+
+if (args.includes("--login")) {
+  const loginUrl = peekOption("url") ?? process.env.MCP_PROBE_URL ?? null;
+  let loginExitCode = 0;
+  if (loginUrl === null) {
+    console.error("--login requires --url (or MCP_PROBE_URL) pointing at the gateway MCP endpoint");
+    console.log("login-status failed");
+    console.log("error-code SERVER_URL_UNKNOWN");
+    loginExitCode = 1;
+  } else {
+    const store = openTokenStore();
+    try {
+      const result = await loginToGateway(loginUrl, store, (deviceAuth) => {
+        console.log(`user-code ${deviceAuth.userCode}`);
+        console.log(`verification-uri ${deviceAuth.verificationUri}`);
+        if (deviceAuth.verificationUriComplete) {
+          console.log(`verification-uri-complete ${deviceAuth.verificationUriComplete}`);
+        }
+        console.error("Open the verification URI in a browser and approve this device. Waiting for approval...");
+      });
+      console.log("login-status success");
+      console.log(`token-origin ${result.origin}`);
+      console.log(`token-expires-at ${new Date(result.expiresAt).toISOString()}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`login failed: ${message}`);
+      console.log("login-status failed");
+      loginExitCode = 1;
+    } finally {
+      store.close();
+    }
+  }
+  process.exit(loginExitCode);
 }
 
 function parseOptions() {
@@ -118,13 +164,38 @@ function parseOptions() {
   const authTokenFlag = readOption("auth-token");
   const authToken = authTokenFlag ?? process.env.MCP_PROBE_AUTH_TOKEN ?? null;
   const authTokenFromFlag = authTokenFlag !== undefined;
-  const requestHeaders: Record<string, string> | undefined = authToken
-    ? { Authorization: `Bearer ${authToken}` }
-    : undefined;
   const skipResourceListCheck =
     args.includes("--skip-resource-list-check") || process.env.MCP_PROBE_SKIP_LIST_CHECK === "true";
   const json = args.includes("--json");
-  return { url, uri, timeoutMs, requestHeaders, skipResourceListCheck, authTokenFromFlag, json };
+  return { url, uri, timeoutMs, authToken, skipResourceListCheck, authTokenFromFlag, json };
+}
+
+/**
+ * Explicit tokens (--auth-token / MCP_PROBE_AUTH_TOKEN) always win so existing
+ * callers keep full control; the login cache is only consulted when no token
+ * was provided. May throw AuthLoginRequiredError / OAuthRequestError when the
+ * cached token is expired and unattended refresh fails.
+ */
+async function resolveBearerToken(url: string, explicitToken: string | null): Promise<string | null> {
+  if (explicitToken !== null) {
+    return explicitToken;
+  }
+  // Never create the token store as a probe side effect: runs that have not
+  // used --login keep their exact pre-auth behavior (and stay contention-free
+  // when many probes run in parallel).
+  if (!tokenStoreExists()) {
+    return null;
+  }
+  const store = openTokenStore();
+  try {
+    const resolved = await resolveCachedToken(url, store);
+    if (resolved.source !== "none") {
+      console.error(`auth token source: ${resolved.source}`);
+    }
+    return resolved.token;
+  } finally {
+    store.close();
+  }
 }
 
 function printResult(result: Awaited<ReturnType<typeof runSubscribeProbe>>, url: string, uri: string): void {
@@ -187,11 +258,12 @@ try {
         "warning: --auth-token value is visible in process lists and may be stored in shell history. Prefer MCP_PROBE_AUTH_TOKEN env var.",
       );
     }
+    const bearerToken = await resolveBearerToken(options.url, options.authToken);
     const result = await runSubscribeProbe({
       url: options.url,
       uri: options.uri,
       timeoutMs: options.timeoutMs,
-      requestHeaders: options.requestHeaders,
+      requestHeaders: bearerToken ? { Authorization: `Bearer ${bearerToken}` } : undefined,
       skipResourceListCheck: options.skipResourceListCheck,
     });
     if (options.json) {
@@ -206,11 +278,24 @@ try {
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   console.error(`subscribe-probe failed: ${message}`);
+  let errorCode = "INTERNAL_ERROR";
+  if (error instanceof AuthLoginRequiredError) {
+    errorCode = "AUTH_LOGIN_REQUIRED";
+    console.error(
+      `hint: run \`mcp-resource-subscriber --login --url ${capturedUrl ?? "<gateway-url>"}\` to re-authenticate`,
+    );
+  } else if (error instanceof OAuthRequestError) {
+    // Transient gateway-side refresh failure (5xx / temporarily_unavailable);
+    // the refresh token was restored server-side, so a plain retry is enough.
+    errorCode = "AUTH_REFRESH_FAILED";
+  }
   if (jsonMode) {
-    process.stdout.write(`${JSON.stringify(buildErrorJsonOutput("INTERNAL_ERROR", capturedUrl, capturedUri))}\n`);
+    process.stdout.write(`${JSON.stringify(buildErrorJsonOutput(errorCode, capturedUrl, capturedUri))}\n`);
   } else {
-    console.log("error-code INTERNAL_ERROR");
-    console.log("phase-summary route=failed url=unknown error-code=INTERNAL_ERROR");
+    console.log(`error-code ${errorCode}`);
+    console.log(
+      `phase-summary route=failed url=${capturedUrl ?? "unknown"} uri=${capturedUri} error-code=${errorCode}`,
+    );
   }
   process.exitCode = 1;
 }
