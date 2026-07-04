@@ -18,12 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - OAuth エンドポイントは RFC 8414 well-known metadata で発見し、未提供時は gateway 固定レイアウト（`/register` / `/device_authorization` / `/token`）にフォールバック
   - device flow ポーリングは RFC 8628 §3.5 準拠（`slow_down` で interval +5秒、`authorization_pending` で継続）
   - トークン値は stdout / stderr に一切出力しない
+- `--logout` フラグ: 指定した gateway origin のキャッシュ済みトークンを削除（#106）。トークンストア未作成時は no-op として成功する
 
 ### Fixed
 
 - 並行 probe プロセスが同一 refresh token で同時に refresh grant を実行する際の競合を解消（#105, thread-owl review）。gateway は使用済み refresh token の再提示を検出すると rotation family 全体を revoke するため、事後のストア再読み込みだけでは次回 refresh が結局失敗する。`TokenStore.withExclusiveLock()`（SQLite `BEGIN IMMEDIATE`）でオリジン単位の refresh をプロセス間で直列化し、ロック待機後にストアを再読み込みして既に他プロセスが更新済みならネットワーク refresh 自体をスキップするよう変更
   - `requestDeviceAuthorization()`: gateway が `verification_uri` を欠落させた場合に空文字列へフォールバックしていたのを修正。`verification_uri_complete` へのフォールバック、両方欠落時はエラーを送出するよう変更
   - CLI 非 JSON エラーパスの `phase-summary` が常に `url=unknown` を出力し `uri` も欠落していたのを修正。捕捉済みの `url` / `uri` を反映するよう変更
+- gateway 側の client 登録喪失（gateway 再構築・DCR ストア消去等）からの回復導線を追加（#106, thread-owl review フォローアップ）。`invalid_client` / `unauthorized_client` を恒久エラーとして `AuthLoginRequiredError` に分類し直し（従来は「単純リトライで回復可能」な `AUTH_REFRESH_FAILED` に誤分類されていた）、`loginToGateway` は cached client_id が拒否された場合に re-register へ自動フォールバックするよう変更
+  - `--logout`: 不正な `--url` を渡すと `new URL()` が未捕捉例外を投げてスタックトレースで落ちていたのを修正。加えてトークンストア未作成時は URL 検証をスキップして `exit 0` の誤成功になっていたのも修正し、両ケースとも構造化された `logout-status failed` / `error-code INVALID_URL` を返すよう変更
 - auth 解決（endpoint discovery + refresh grant）が `--timeout-ms` の対象外で、応答しない gateway に対して無期限にハングし得た問題を修正（#107, thread-owl review フォローアップ）。`resolveCachedToken` の該当 fetch 呼び出しを `AbortSignal.timeout()` で同じ予算に束縛し、超過時は新しい `AuthTimeoutError` → `error-code AUTH_TIMEOUT` を返すよう変更。CLI は auth 解決に費やした時間を差し引いた残り予算を `runSubscribeProbe` に渡す
   - thread-owl の再レビューで、この AbortSignal が `withExclusiveLock()`（cross-process refresh lock）取得より前に生成されていたため、同期的なロック待ち（最大 `busy_timeout` 5秒）が予算に含まれず timeout 契約に反することが判明。デッドラインをロック取得前に確定し、ロック取得後に残り予算を再計算して signal を生成するよう修正。ロック待機だけで予算を使い切った場合は、期限切れ signal で fetch を開始せず即座に `AuthTimeoutError` を返す
   - 続く再レビューで、上記修正後も `BEGIN IMMEDIATE` 自体が同期的な SQLite 呼び出しであるため、実測 wall-clock 上は依然として接続既定の `busy_timeout`（5秒）まで戻らないことが判明（実測 `--timeout-ms 200` に対し `4644ms`）。`TokenStore.withExclusiveLock()` に `timeoutMs` を渡せるようにし、ロック取得直前に `PRAGMA busy_timeout` を一時的にその値へ変更（取得後は既定値に復元）。ロック取得自体が失敗した場合は新しい `LockTimeoutError` を送出し、`resolveCachedToken` はこれも `AuthTimeoutError` に変換する

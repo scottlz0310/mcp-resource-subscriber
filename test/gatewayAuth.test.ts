@@ -66,6 +66,22 @@ describe("gatewayAuth", () => {
       expect(server.counts.register).toBe(0);
       expect(store.get(server.origin)?.clientId).toBe("client-cached");
     });
+
+    it("re-registers when the gateway no longer recognizes the cached client_id (invalid_client)", async () => {
+      server = await startMockAuthServer({ pendingPolls: 1 });
+      server.rejectedClientIds.add("client-stale");
+      store.save({
+        origin: server.origin,
+        clientId: "client-stale",
+        accessToken: "at-old",
+        refreshToken: null,
+        expiresAt: 0,
+      });
+      const result = await loginToGateway(server.origin, store, () => {}, { sleepFn: noSleep });
+      expect(result.origin).toBe(server.origin);
+      expect(server.counts.register).toBe(1);
+      expect(store.get(server.origin)?.clientId).toBe("client-1");
+    });
   });
 
   describe("resolveCachedToken", () => {
@@ -138,6 +154,19 @@ describe("gatewayAuth", () => {
         clientId: "client-1",
         accessToken: "at-expired",
         refreshToken: "rt-revoked",
+        expiresAt: Date.now() - 1000,
+      });
+      await expect(resolveCachedToken(`${server.origin}/mcp`, store)).rejects.toThrow(AuthLoginRequiredError);
+    });
+
+    it("requires re-login when the gateway no longer recognizes the cached client (invalid_client)", async () => {
+      server = await startMockAuthServer();
+      server.rejectedClientIds.add("client-stale");
+      store.save({
+        origin: server.origin,
+        clientId: "client-stale",
+        accessToken: "at-expired",
+        refreshToken: "rt-seed",
         expiresAt: Date.now() - 1000,
       });
       await expect(resolveCachedToken(`${server.origin}/mcp`, store)).rejects.toThrow(AuthLoginRequiredError);

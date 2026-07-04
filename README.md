@@ -62,6 +62,9 @@ mcp-resource-subscriber --url http://127.0.0.1:8089/mcp
                       gateway serving --url. Caches the issued tokens so later
                       runs authenticate and refresh automatically.
                       Cache path env: MCP_PROBE_TOKEN_STORE_PATH
+  --logout             Remove the cached token set for the gateway serving --url.
+                      Use after a gateway rebuild or DCR store reset so the
+                      next --login registers a fresh client.
   --skip-resource-list-check
                       Skip resources/list and assume the URI exists.
                       Use for servers with dynamic resources not in list.
@@ -98,7 +101,12 @@ Later probe runs against the same origin then work unattended:
 4. If the refresh token itself is rejected (`invalid_grant`), the run fails with
    `error-code AUTH_LOGIN_REQUIRED` — run `--login` once more. Transient gateway
    errors during refresh fail with `AUTH_REFRESH_FAILED` and can simply be retried.
-5. Auth resolution (cross-process refresh lock wait + endpoint discovery + refresh
+5. If the gateway no longer recognizes the cached client at all (`invalid_client` /
+   `unauthorized_client` — e.g. after a gateway rebuild or DCR store reset), the run
+   also fails with `AUTH_LOGIN_REQUIRED`. Running `--login` again automatically
+   registers a fresh client when the cached one is rejected; `--logout` clears the
+   stale entry outright if you want to force that.
+6. Auth resolution (cross-process refresh lock wait + endpoint discovery + refresh
    grant) is bounded by `--timeout-ms`, the same budget used for the notification
    wait. A gateway that accepts the connection but never responds fails with
    `error-code AUTH_TIMEOUT` (a plain retry is reasonable) instead of hanging
