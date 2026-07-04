@@ -212,12 +212,18 @@ describe("CLI auth integration", () => {
   it("AUTH_LOGIN_REQUIRED in line-based mode when refresh is rejected", async () => {
     authServer = await startMockAuthServer();
     seedToken(authServer.origin, { expiresAt: Date.now() - 1000, refreshToken: "rt-dead" });
-    const result = await runCli(["--url", `${authServer.origin}/mcp`, "--timeout-ms", "3000"], {
+    const url = `${authServer.origin}/mcp`;
+    const result = await runCli(["--url", url, "--timeout-ms", "3000"], {
       MCP_PROBE_TOKEN_STORE_PATH: dbPath,
     });
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toContain("error-code AUTH_LOGIN_REQUIRED");
     expect(result.stderr).toContain("run `mcp-resource-subscriber --login");
+    // The failure phase-summary must report the actual url/uri, not "unknown",
+    // so automation can correlate the failure with the run that produced it.
+    expect(result.stdout).toContain(
+      `phase-summary route=failed url=${url} uri=test://review/status error-code=AUTH_LOGIN_REQUIRED`,
+    );
   }, 15_000);
 });

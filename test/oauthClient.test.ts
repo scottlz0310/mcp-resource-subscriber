@@ -58,6 +58,46 @@ describe("oauthClient against a mock authorization server", () => {
     expect(auth.expiresIn).toBe(900);
   });
 
+  it("falls back to verification_uri_complete when verification_uri is missing", async () => {
+    server = await startMockAuthServer();
+    const rawFetch = fetch;
+    const fetchFn: typeof fetch = async (input, init) => {
+      const response = await rawFetch(input, init);
+      if (typeof input === "string" && input.endsWith("/device_authorization")) {
+        const body = (await response.json()) as Record<string, unknown>;
+        delete body.verification_uri;
+        return new Response(JSON.stringify(body), {
+          status: response.status,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return response;
+    };
+    const auth = await requestDeviceAuthorization(endpointsOf(server.origin), "client-1", fetchFn);
+    expect(auth.verificationUri).toBe(auth.verificationUriComplete);
+  });
+
+  it("throws when the response has neither verification_uri nor verification_uri_complete", async () => {
+    server = await startMockAuthServer();
+    const rawFetch = fetch;
+    const fetchFn: typeof fetch = async (input, init) => {
+      const response = await rawFetch(input, init);
+      if (typeof input === "string" && input.endsWith("/device_authorization")) {
+        const body = (await response.json()) as Record<string, unknown>;
+        delete body.verification_uri;
+        delete body.verification_uri_complete;
+        return new Response(JSON.stringify(body), {
+          status: response.status,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return response;
+    };
+    await expect(requestDeviceAuthorization(endpointsOf(server.origin), "client-1", fetchFn)).rejects.toThrow(
+      /verification_uri/,
+    );
+  });
+
   it("polls through authorization_pending until approval and returns a token set", async () => {
     server = await startMockAuthServer({ pendingPolls: 2, accessTokenExpiresInSec: 3600 });
     const endpoints = endpointsOf(server.origin);

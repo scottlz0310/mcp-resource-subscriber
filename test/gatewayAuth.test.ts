@@ -138,6 +138,42 @@ describe("gatewayAuth", () => {
       await expect(resolveCachedToken(`${server.origin}/mcp`, store)).rejects.toThrow(AuthLoginRequiredError);
     });
 
+    it("adopts a refresh token another process already rotated instead of forcing a re-login (TOCTOU)", async () => {
+      server = await startMockAuthServer();
+      const origin = server.origin;
+      // "rt-seed" is intentionally never added to validRefreshTokens: this
+      // simulates a concurrent probe process having already consumed and
+      // rotated it moments before our own refresh request reaches the
+      // gateway, so ours comes back invalid_grant.
+      store.save({
+        origin,
+        clientId: "client-1",
+        accessToken: "at-expired",
+        refreshToken: "rt-seed",
+        expiresAt: Date.now() - 1000,
+      });
+      const rawFetch = fetch;
+      const fetchFn: typeof fetch = async (input, init) => {
+        const response = await rawFetch(input, init);
+        if (typeof input === "string" && input.endsWith("/token") && !response.ok) {
+          // The winning process persists its rotated tokens right as our
+          // request fails — exercising the re-read-before-giving-up path.
+          store.save({
+            origin,
+            clientId: "client-1",
+            accessToken: "at-winner",
+            refreshToken: "rt-winner",
+            expiresAt: Date.now() + 60 * 60 * 1000,
+          });
+        }
+        return response;
+      };
+      const resolved = await resolveCachedToken(`${server.origin}/mcp`, store, { fetchFn });
+      expect(resolved).toEqual({ token: "at-winner", source: "cache-refreshed" });
+      // The winner's own save() must not be clobbered by the loser's request.
+      expect(store.get(server.origin)?.refreshToken).toBe("rt-winner");
+    });
+
     it("propagates transient gateway errors so callers can retry instead of re-authenticating", async () => {
       server = await startMockAuthServer();
       server.refreshFailure = { error: "temporarily_unavailable", status: 503 };

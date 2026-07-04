@@ -108,6 +108,15 @@ export async function resolveCachedToken(
     tokens = await refreshTokenGrant(endpoints, cached.clientId, cached.refreshToken, fetchFn);
   } catch (error) {
     if (error instanceof OAuthRequestError && error.oauthError === "invalid_grant") {
+      // Refresh tokens are single-use: a concurrent probe process may have
+      // already rotated this one and persisted a fresh access token before we
+      // hit invalid_grant. Re-read the store before forcing a re-login — if
+      // it now holds a different refresh token than the one we presented,
+      // that process won the race and its saved access token is usable.
+      const latest = store.get(origin);
+      if (latest?.refreshToken && latest.refreshToken !== cached.refreshToken) {
+        return { token: latest.accessToken, source: "cache-refreshed" };
+      }
       throw new AuthLoginRequiredError(
         `gateway ${origin} rejected the cached refresh token (invalid_grant); run --login again`,
         { cause: error },

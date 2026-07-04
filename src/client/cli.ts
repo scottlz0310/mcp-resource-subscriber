@@ -293,7 +293,9 @@ try {
     process.stdout.write(`${JSON.stringify(buildErrorJsonOutput(errorCode, capturedUrl, capturedUri))}\n`);
   } else {
     console.log(`error-code ${errorCode}`);
-    console.log(`phase-summary route=failed url=unknown error-code=${errorCode}`);
+    console.log(
+      `phase-summary route=failed url=${capturedUrl ?? "unknown"} uri=${capturedUri} error-code=${errorCode}`,
+    );
   }
   process.exitCode = 1;
 }

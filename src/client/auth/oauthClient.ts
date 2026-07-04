@@ -136,11 +136,17 @@ export async function requestDeviceAuthorization(
   if (typeof doc.device_code !== "string" || typeof doc.user_code !== "string") {
     throw new Error("device authorization response is missing device_code or user_code");
   }
+  const verificationUriComplete =
+    typeof doc.verification_uri_complete === "string" ? doc.verification_uri_complete : null;
+  const verificationUri = typeof doc.verification_uri === "string" ? doc.verification_uri : verificationUriComplete;
+  if (!verificationUri) {
+    throw new Error("device authorization response is missing verification_uri");
+  }
   return {
     deviceCode: doc.device_code,
     userCode: doc.user_code,
-    verificationUri: typeof doc.verification_uri === "string" ? doc.verification_uri : "",
-    verificationUriComplete: typeof doc.verification_uri_complete === "string" ? doc.verification_uri_complete : null,
+    verificationUri,
+    verificationUriComplete,
     expiresIn: typeof doc.expires_in === "number" ? doc.expires_in : 900,
     interval: typeof doc.interval === "number" ? doc.interval : 5,
   };

@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - device flow ポーリングは RFC 8628 §3.5 準拠（`slow_down` で interval +5秒、`authorization_pending` で継続）
   - トークン値は stdout / stderr に一切出力しない
 
+### Fixed
+
+- 並行 probe プロセスが同一 refresh token で同時に refresh grant を実行した際の TOCTOU 競合を解消（#105, thread-owl review）。`invalid_grant` を受けた側がストアを再読み込みし、他プロセスが既にローテーション済みのトークンを保存していればそれを採用し、不要な `AUTH_LOGIN_REQUIRED` エスカレーションを避ける
+  - `requestDeviceAuthorization()`: gateway が `verification_uri` を欠落させた場合に空文字列へフォールバックしていたのを修正。`verification_uri_complete` へのフォールバック、両方欠落時はエラーを送出するよう変更
+  - CLI 非 JSON エラーパスの `phase-summary` が常に `url=unknown` を出力し `uri` も欠落していたのを修正。捕捉済みの `url` / `uri` を反映するよう変更
+
 ### Internal
 
 - `test/helpers/mockAuthServer.ts`: mcp-gateway の OAuth surface を模した in-process モック認可サーバー
