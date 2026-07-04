@@ -2,7 +2,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AuthLoginRequiredError, loginToGateway, resolveCachedToken } from "../src/client/auth/gatewayAuth.js";
+import {
+  AuthLoginRequiredError,
+  AuthTimeoutError,
+  loginToGateway,
+  resolveCachedToken,
+} from "../src/client/auth/gatewayAuth.js";
 import { OAuthRequestError } from "../src/client/auth/oauthClient.js";
 import { openTokenStore, type TokenStore } from "../src/client/auth/tokenStore.js";
 import { type MockAuthServer, startMockAuthServer } from "./helpers/mockAuthServer.js";
@@ -136,6 +141,28 @@ describe("gatewayAuth", () => {
         expiresAt: Date.now() - 1000,
       });
       await expect(resolveCachedToken(`${server.origin}/mcp`, store)).rejects.toThrow(AuthLoginRequiredError);
+    });
+
+    it("raises AuthTimeoutError instead of hanging when the network calls exceed timeoutMs", async () => {
+      server = await startMockAuthServer();
+      store.save({
+        origin: server.origin,
+        clientId: "client-1",
+        accessToken: "at-expired",
+        refreshToken: "rt-seed",
+        expiresAt: Date.now() - 1000,
+      });
+      // Mimics a gateway that accepts the connection but never responds:
+      // the fetch never resolves on its own, only when its AbortSignal fires.
+      const hangingFetch: typeof fetch = (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            reject(new DOMException("The operation was aborted.", "AbortError"));
+          });
+        });
+      await expect(
+        resolveCachedToken(`${server.origin}/mcp`, store, { fetchFn: hangingFetch, timeoutMs: 50 }),
+      ).rejects.toThrow(AuthTimeoutError);
     });
 
     it("skips the network refresh when another process already refreshed while waiting for the lock", async () => {

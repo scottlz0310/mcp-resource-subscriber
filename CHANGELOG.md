@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 並行 probe プロセスが同一 refresh token で同時に refresh grant を実行する際の競合を解消（#105, thread-owl review）。gateway は使用済み refresh token の再提示を検出すると rotation family 全体を revoke するため、事後のストア再読み込みだけでは次回 refresh が結局失敗する。`TokenStore.withExclusiveLock()`（SQLite `BEGIN IMMEDIATE`）でオリジン単位の refresh をプロセス間で直列化し、ロック待機後にストアを再読み込みして既に他プロセスが更新済みならネットワーク refresh 自体をスキップするよう変更
   - `requestDeviceAuthorization()`: gateway が `verification_uri` を欠落させた場合に空文字列へフォールバックしていたのを修正。`verification_uri_complete` へのフォールバック、両方欠落時はエラーを送出するよう変更
   - CLI 非 JSON エラーパスの `phase-summary` が常に `url=unknown` を出力し `uri` も欠落していたのを修正。捕捉済みの `url` / `uri` を反映するよう変更
+- auth 解決（endpoint discovery + refresh grant）が `--timeout-ms` の対象外で、応答しない gateway に対して無期限にハングし得た問題を修正（#107, thread-owl review フォローアップ）。`resolveCachedToken` の該当 fetch 呼び出しを `AbortSignal.timeout()` で同じ予算に束縛し、超過時は新しい `AuthTimeoutError` → `error-code AUTH_TIMEOUT` を返すよう変更。CLI は auth 解決に費やした時間を差し引いた残り予算を `runSubscribeProbe` に渡す
 
 ### Internal
 

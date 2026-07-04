@@ -98,6 +98,10 @@ Later probe runs against the same origin then work unattended:
 4. If the refresh token itself is rejected (`invalid_grant`), the run fails with
    `error-code AUTH_LOGIN_REQUIRED` — run `--login` once more. Transient gateway
    errors during refresh fail with `AUTH_REFRESH_FAILED` and can simply be retried.
+5. Auth resolution (endpoint discovery + refresh grant) is bounded by `--timeout-ms`,
+   the same budget used for the notification wait. A gateway that accepts the
+   connection but never responds fails with `error-code AUTH_TIMEOUT` (a plain
+   retry is reasonable) instead of hanging past the requested timeout.
 
 Runs that never used `--login` do not create the cache and behave exactly as before.
 
