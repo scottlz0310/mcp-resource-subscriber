@@ -83,6 +83,9 @@ if (args.includes("--help") || args.includes("-h")) {
   console.log("                      later runs authenticate and refresh automatically.");
   console.log("                      Explicit --auth-token / MCP_PROBE_AUTH_TOKEN always");
   console.log("                      override the cache. Cache: MCP_PROBE_TOKEN_STORE_PATH");
+  console.log("  --logout             Remove the cached token set for the gateway serving");
+  console.log("                      --url. Use after a gateway rebuild or DCR store reset");
+  console.log("                      so the next --login registers a fresh client.");
   console.log("  --skip-resource-list-check");
   console.log("                      Skip resources/list and assume the URI exists.");
   console.log("                      Use for servers with dynamic resources not in list.");
@@ -111,6 +114,9 @@ if (args.includes("--help") || args.includes("-h")) {
   console.log("");
   console.log("  # One-time interactive login against an mcp-gateway:");
   console.log("  mcp-resource-subscriber --login --url http://127.0.0.1:8080/mcp/subscribe-probe");
+  console.log("");
+  console.log("  # Remove the cached token set for a gateway (e.g. after it was rebuilt):");
+  console.log("  mcp-resource-subscriber --logout --url http://127.0.0.1:8080/mcp/subscribe-probe");
   process.exit(0);
 }
 
@@ -151,6 +157,29 @@ if (args.includes("--login")) {
     }
   }
   process.exit(loginExitCode);
+}
+
+if (args.includes("--logout")) {
+  const logoutUrl = peekOption("url") ?? process.env.MCP_PROBE_URL ?? null;
+  let logoutExitCode = 0;
+  if (logoutUrl === null) {
+    console.error("--logout requires --url (or MCP_PROBE_URL) pointing at the gateway MCP endpoint");
+    console.log("logout-status failed");
+    console.log("error-code SERVER_URL_UNKNOWN");
+    logoutExitCode = 1;
+  } else if (!tokenStoreExists()) {
+    // Nothing to remove — idempotent no-op instead of creating the store.
+    console.log("logout-status success");
+  } else {
+    const store = openTokenStore();
+    try {
+      store.delete(new URL(logoutUrl).origin);
+      console.log("logout-status success");
+    } finally {
+      store.close();
+    }
+  }
+  process.exit(logoutExitCode);
 }
 
 function parseOptions() {

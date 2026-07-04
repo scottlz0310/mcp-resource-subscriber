@@ -18,12 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - OAuth エンドポイントは RFC 8414 well-known metadata で発見し、未提供時は gateway 固定レイアウト（`/register` / `/device_authorization` / `/token`）にフォールバック
   - device flow ポーリングは RFC 8628 §3.5 準拠（`slow_down` で interval +5秒、`authorization_pending` で継続）
   - トークン値は stdout / stderr に一切出力しない
+- `--logout` フラグ: 指定した gateway origin のキャッシュ済みトークンを削除（#106）。トークンストア未作成時は no-op として成功する
 
 ### Fixed
 
 - 並行 probe プロセスが同一 refresh token で同時に refresh grant を実行する際の競合を解消（#105, thread-owl review）。gateway は使用済み refresh token の再提示を検出すると rotation family 全体を revoke するため、事後のストア再読み込みだけでは次回 refresh が結局失敗する。`TokenStore.withExclusiveLock()`（SQLite `BEGIN IMMEDIATE`）でオリジン単位の refresh をプロセス間で直列化し、ロック待機後にストアを再読み込みして既に他プロセスが更新済みならネットワーク refresh 自体をスキップするよう変更
   - `requestDeviceAuthorization()`: gateway が `verification_uri` を欠落させた場合に空文字列へフォールバックしていたのを修正。`verification_uri_complete` へのフォールバック、両方欠落時はエラーを送出するよう変更
   - CLI 非 JSON エラーパスの `phase-summary` が常に `url=unknown` を出力し `uri` も欠落していたのを修正。捕捉済みの `url` / `uri` を反映するよう変更
+- gateway 側の client 登録喪失（gateway 再構築・DCR ストア消去等）からの回復導線を追加（#106, thread-owl review フォローアップ）。`invalid_client` / `unauthorized_client` を恒久エラーとして `AuthLoginRequiredError` に分類し直し（従来は「単純リトライで回復可能」な `AUTH_REFRESH_FAILED` に誤分類されていた）、`loginToGateway` は cached client_id が拒否された場合に re-register へ自動フォールバックするよう変更
 
 ### Internal
 

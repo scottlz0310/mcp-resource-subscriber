@@ -24,6 +24,8 @@ export interface MockAuthServer {
   issuedAccessTokens: string[];
   /** When set, refresh grants fail with this OAuth error instead of rotating. */
   refreshFailure: { error: string; status: number } | null;
+  /** client_ids the server treats as unrecognized (e.g. after a rebuild). */
+  rejectedClientIds: Set<string>;
   close(): Promise<void>;
 }
 
@@ -39,6 +41,7 @@ export async function startMockAuthServer(options: MockAuthServerOptions = {}): 
 
   const counts = { register: 0, deviceAuthorization: 0, tokenPolls: 0, refresh: 0 };
   const validRefreshTokens = new Set<string>();
+  const rejectedClientIds = new Set<string>();
   const issuedAccessTokens: string[] = [];
   const deviceOutcome = options.deviceOutcome ?? "approved";
   let pendingRemaining = options.pendingPolls ?? 0;
@@ -53,6 +56,7 @@ export async function startMockAuthServer(options: MockAuthServerOptions = {}): 
     validRefreshTokens,
     issuedAccessTokens,
     refreshFailure: null,
+    rejectedClientIds,
     close: async () => {},
   };
 
@@ -85,8 +89,13 @@ export async function startMockAuthServer(options: MockAuthServerOptions = {}): 
     res.status(201).json({ client_id: `client-${counts.register}` });
   });
 
-  app.post("/device_authorization", (_req, res) => {
+  app.post("/device_authorization", (req, res) => {
     counts.deviceAuthorization++;
+    const body = req.body as Record<string, string>;
+    if (body.client_id && rejectedClientIds.has(body.client_id)) {
+      res.status(400).json({ error: "invalid_client" });
+      return;
+    }
     res.json({
       device_code: "device-code-1",
       user_code: "ABCD-1234",
@@ -126,6 +135,10 @@ export async function startMockAuthServer(options: MockAuthServerOptions = {}): 
       counts.refresh++;
       if (handle.refreshFailure) {
         res.status(handle.refreshFailure.status).json({ error: handle.refreshFailure.error });
+        return;
+      }
+      if (body.client_id && rejectedClientIds.has(body.client_id)) {
+        res.status(400).json({ error: "invalid_client" });
         return;
       }
       if (!body.refresh_token || !validRefreshTokens.has(body.refresh_token)) {
