@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `requestDeviceAuthorization()`: gateway が `verification_uri` を欠落させた場合に空文字列へフォールバックしていたのを修正。`verification_uri_complete` へのフォールバック、両方欠落時はエラーを送出するよう変更
   - CLI 非 JSON エラーパスの `phase-summary` が常に `url=unknown` を出力し `uri` も欠落していたのを修正。捕捉済みの `url` / `uri` を反映するよう変更
 - gateway 側の client 登録喪失（gateway 再構築・DCR ストア消去等）からの回復導線を追加（#106, thread-owl review フォローアップ）。`invalid_client` / `unauthorized_client` を恒久エラーとして `AuthLoginRequiredError` に分類し直し（従来は「単純リトライで回復可能」な `AUTH_REFRESH_FAILED` に誤分類されていた）、`loginToGateway` は cached client_id が拒否された場合に re-register へ自動フォールバックするよう変更
+  - `--logout`: 不正な `--url` を渡すと `new URL()` が未捕捉例外を投げてスタックトレースで落ちていたのを修正。加えてトークンストア未作成時は URL 検証をスキップして `exit 0` の誤成功になっていたのも修正し、両ケースとも構造化された `logout-status failed` / `error-code INVALID_URL` を返すよう変更
 
 ### Internal
 

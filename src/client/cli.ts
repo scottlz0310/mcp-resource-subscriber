@@ -167,16 +167,31 @@ if (args.includes("--logout")) {
     console.log("logout-status failed");
     console.log("error-code SERVER_URL_UNKNOWN");
     logoutExitCode = 1;
-  } else if (!tokenStoreExists()) {
-    // Nothing to remove — idempotent no-op instead of creating the store.
-    console.log("logout-status success");
   } else {
-    const store = openTokenStore();
+    // Validate the URL before consulting tokenStoreExists(): an invalid URL
+    // must fail the same way regardless of whether the store happens to
+    // exist yet, instead of silently reporting success when it doesn't.
+    let origin: string;
     try {
-      store.delete(new URL(logoutUrl).origin);
+      origin = new URL(logoutUrl).origin;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`--logout: invalid --url '${logoutUrl}': ${message}`);
+      console.log("logout-status failed");
+      console.log("error-code INVALID_URL");
+      process.exit(1);
+    }
+    if (!tokenStoreExists()) {
+      // Nothing to remove — idempotent no-op instead of creating the store.
       console.log("logout-status success");
-    } finally {
-      store.close();
+    } else {
+      const store = openTokenStore();
+      try {
+        store.delete(origin);
+        console.log("logout-status success");
+      } finally {
+        store.close();
+      }
     }
   }
   process.exit(logoutExitCode);
