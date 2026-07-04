@@ -143,6 +143,59 @@ describe("CLI auth integration", () => {
     expect(result.stdout).toContain("error-code SERVER_URL_UNKNOWN");
   });
 
+  it("--logout without a URL fails with SERVER_URL_UNKNOWN", async () => {
+    const result = await runCli(["--logout"], { MCP_PROBE_TOKEN_STORE_PATH: dbPath });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toContain("logout-status failed");
+    expect(result.stdout).toContain("error-code SERVER_URL_UNKNOWN");
+  });
+
+  it("--logout removes the cached token for the given origin", async () => {
+    const origin = "http://127.0.0.1:1";
+    seedToken(origin);
+    const result = await runCli(["--logout", "--url", `${origin}/mcp`], { MCP_PROBE_TOKEN_STORE_PATH: dbPath });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("logout-status success");
+    const store = openTokenStore(dbPath);
+    try {
+      expect(store.get(origin)).toBeNull();
+    } finally {
+      store.close();
+    }
+  });
+
+  it("--logout is a no-op when nothing is cached yet", async () => {
+    const result = await runCli(["--logout", "--url", "http://127.0.0.1:1/mcp"], {
+      MCP_PROBE_TOKEN_STORE_PATH: dbPath,
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("logout-status success");
+  });
+
+  it("--logout with an invalid URL fails structured instead of crashing (no store yet)", async () => {
+    const result = await runCli(["--logout", "--url", "not-a-url"], {
+      MCP_PROBE_TOKEN_STORE_PATH: dbPath,
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toContain("logout-status failed");
+    expect(result.stdout).toContain("error-code INVALID_URL");
+  });
+
+  it("--logout with an invalid URL fails structured instead of crashing (store exists)", async () => {
+    seedToken("http://127.0.0.1:1");
+    const result = await runCli(["--logout", "--url", "not-a-url"], {
+      MCP_PROBE_TOKEN_STORE_PATH: dbPath,
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toContain("logout-status failed");
+    expect(result.stdout).toContain("error-code INVALID_URL");
+  });
+
   it("uses the cached token as Bearer for the probe connection", async () => {
     const mcp = await startCapturingMcpServer();
     try {

@@ -15,6 +15,16 @@ import type { TokenStore } from "./tokenStore.js";
 const EXPIRY_MARGIN_MS = 5 * 60 * 1000;
 
 /**
+ * True for OAuth errors meaning the gateway no longer recognizes our
+ * client_id (DCR store cleared, gateway rebuilt, etc.) — a permanent
+ * condition that requires re-registration, unlike `invalid_grant` (dead
+ * refresh token) or transient 5xx errors.
+ */
+function isUnknownClientError(error: OAuthRequestError): boolean {
+  return error.oauthError === "invalid_client" || error.oauthError === "unauthorized_client";
+}
+
+/**
  * The cached credentials cannot be renewed unattended (refresh token missing,
  * expired, or revoked) — the user must run `--login` again.
  */
@@ -57,8 +67,22 @@ export async function loginToGateway(
   const fetchFn = options.fetchFn ?? fetch;
   const origin = new URL(url).origin;
   const endpoints = await discoverEndpoints(origin, fetchFn);
-  const clientId = store.get(origin)?.clientId ?? (await registerClient(endpoints, fetchFn));
-  const deviceAuth = await requestDeviceAuthorization(endpoints, clientId, fetchFn);
+  const cachedClientId = store.get(origin)?.clientId ?? null;
+  let clientId = cachedClientId ?? (await registerClient(endpoints, fetchFn));
+  let deviceAuth: DeviceAuthorization;
+  try {
+    deviceAuth = await requestDeviceAuthorization(endpoints, clientId, fetchFn);
+  } catch (error) {
+    if (cachedClientId && error instanceof OAuthRequestError && isUnknownClientError(error)) {
+      // The gateway no longer recognizes our cached client_id (gateway
+      // rebuilt, DCR store cleared, etc.) — register a fresh client and
+      // retry once instead of failing outright.
+      clientId = await registerClient(endpoints, fetchFn);
+      deviceAuth = await requestDeviceAuthorization(endpoints, clientId, fetchFn);
+    } else {
+      throw error;
+    }
+  }
   onVerification(deviceAuth);
   const tokens = await pollDeviceToken(endpoints, clientId, deviceAuth, options);
   store.save({
@@ -134,6 +158,14 @@ export async function resolveCachedToken(
       if (error instanceof OAuthRequestError && error.oauthError === "invalid_grant") {
         throw new AuthLoginRequiredError(
           `gateway ${origin} rejected the cached refresh token (invalid_grant); run --login again`,
+          { cause: error },
+        );
+      }
+      if (error instanceof OAuthRequestError && isUnknownClientError(error)) {
+        // Permanent, not retriable: the gateway no longer recognizes this
+        // client_id at all, so no amount of refresh-token retrying recovers.
+        throw new AuthLoginRequiredError(
+          `gateway ${origin} no longer recognizes the cached client (${error.oauthError}); run --login again`,
           { cause: error },
         );
       }
