@@ -314,13 +314,19 @@ function printResult(result: Awaited<ReturnType<typeof runSubscribeProbe>>, url:
 async function runCallCommand(): Promise<void> {
   const jsonMode = args.includes("--json");
 
+  // Prints the same key set (server-url/tool/is-error/error-code/content) as
+  // the success path below so line-based output has one consistent shape for
+  // machine parsers, matching the --json error shape (isError: true, content: null).
   function emitError(errorCode: string, exitCode: number, url: string | null, tool: string | null): void {
     if (jsonMode) {
       process.stdout.write(`${JSON.stringify(buildCallErrorJsonOutput(errorCode, url, tool))}\n`);
     } else {
       console.log(`server-url ${url ?? "unknown"}`);
       console.log(`tool ${tool ?? "unknown"}`);
+      console.log("is-error true");
       console.log(`error-code ${errorCode}`);
+      console.log("content");
+      console.log("null");
     }
     process.exitCode = exitCode;
   }

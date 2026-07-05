@@ -24,6 +24,11 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 
 export async function runToolCall(options: ToolCallOptions): Promise<ToolCallResult> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  // Single deadline covering both connect() (initialize) and callTool(): without
+  // this, initialize used the SDK's default 60s request timeout regardless of
+  // --timeout-ms, so a server that accepts the connection but never responds
+  // would hang for up to 60s before --timeout-ms even started counting.
+  const deadline = Date.now() + timeoutMs;
   const client = new Client({
     name: options.clientName ?? "mcp-resource-subscribe-call-client",
     version: options.clientVersion ?? "0.3.0",
@@ -33,11 +38,13 @@ export async function runToolCall(options: ToolCallOptions): Promise<ToolCallRes
     const transport = new StreamableHTTPClientTransport(new URL(options.url), {
       requestInit: options.requestHeaders ? { headers: options.requestHeaders } : undefined,
     });
-    await client.connect(transport);
+    const connectTimeoutMs = Math.max(0, deadline - Date.now());
+    await client.connect(transport, { timeout: connectTimeoutMs, maxTotalTimeout: connectTimeoutMs });
 
+    const callTimeoutMs = Math.max(0, deadline - Date.now());
     const result = await client.callTool({ name: options.tool, arguments: options.args ?? {} }, undefined, {
-      timeout: timeoutMs,
-      maxTotalTimeout: timeoutMs,
+      timeout: callTimeoutMs,
+      maxTotalTimeout: callTimeoutMs,
     });
 
     return {

@@ -245,6 +245,39 @@ describe("call subcommand: communication error", () => {
     expect(json.errorCode).toBe("CALL_FAILED");
   }, 10_000);
 
+  // Regression test for a bug where --timeout-ms only bounded callTool(), not
+  // the preceding connect()/initialize request, which used the SDK's default
+  // 60s request timeout. A server that accepts the TCP connection but never
+  // responds must fail within roughly --timeout-ms, not 60s.
+  it("server that accepts the connection but never responds to initialize fails within --timeout-ms (wall clock)", async () => {
+    const hangingServer = createServer(() => {});
+    hangingServer.listen(0, "127.0.0.1");
+    await once(hangingServer, "listening");
+    const { port } = hangingServer.address() as AddressInfo;
+    try {
+      const start = Date.now();
+      const result = await runCli([
+        "--url",
+        `http://127.0.0.1:${port}/mcp`,
+        "--tool",
+        "echo_tool",
+        "--json",
+        "--timeout-ms",
+        "500",
+      ]);
+      const elapsedMs = Date.now() - start;
+
+      expect(result.exitCode).toBe(3);
+      const json = JSON.parse(result.stdout) as CallJsonOutput;
+      expect(json.errorCode).toBe("CALL_FAILED");
+      // Generous upper bound (well under the SDK's 60s default) to absorb
+      // process spawn/CLI overhead while still proving the fix took effect.
+      expect(elapsedMs).toBeLessThan(10_000);
+    } finally {
+      await new Promise<void>((resolve, reject) => hangingServer.close((err) => (err ? reject(err) : resolve())));
+    }
+  }, 15_000);
+
   // The MCP SDK's server-side tools/call handler catches "tool not found"
   // internally and reports it as a normal CallToolResult with isError: true
   // (not a JSON-RPC protocol error), so this surfaces as TOOL_ERROR/exit 1
