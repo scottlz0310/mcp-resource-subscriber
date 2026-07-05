@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `call` モードで `runToolCall()` 完了直後に `process.exit()` を呼ぶと、Streamable HTTP transport の SSE ストリームを閉じた直後という条件で Windows 上の libuv アサーション（`!(handle->flags & UV_HANDLE_CLOSING)`, `src/win/async.c`）が確率的にクラッシュしていたのを修正。`process.exitCode` を設定して自然終了させる方式に変更
+- `call` モードで `--timeout-ms` が `callTool()` にしか適用されておらず、直前の `client.connect()`（initialize）は SDK 既定の 60 秒 timeout のままだったのを修正（thread-owl review）。応答しない Streamable HTTP server に対して認証後の残り時間から単一 deadline を作り、`initialize` と `tools/call` の両方を同じ予算に束縛するよう変更。initialize がハングするケースの wall-clock 回帰テストを追加
+- `call` モードの line-based（非 JSON）出力で、pre-tool-call / 認証エラー / 通信エラー時に `is-error` と `content` が欠落し、成功時と出力形状が不一致だったのを修正（Copilot review）。エラー時も `is-error true` / `content` に `null` を出力し、成功時と同じ5フィールドの形状に統一
+
+### Internal
+
+- `test/callClient.test.ts` を追加: `runToolCall()` / `buildCallJsonOutput()` / `buildCallErrorJsonOutput()` の in-process ユニットテスト（`test/call.test.ts` は CLI サブプロセステストのため、親プロセスのカバレッジ計測に含まれない点を補完）
 
 ## [0.3.0] - 2026-07-04
 
