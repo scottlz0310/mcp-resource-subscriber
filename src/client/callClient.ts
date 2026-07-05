@@ -31,7 +31,7 @@ export async function runToolCall(options: ToolCallOptions): Promise<ToolCallRes
   const deadline = Date.now() + timeoutMs;
   const client = new Client({
     name: options.clientName ?? "mcp-resource-subscribe-call-client",
-    version: options.clientVersion ?? "0.3.0",
+    version: options.clientVersion ?? "0.4.0",
   });
 
   try {

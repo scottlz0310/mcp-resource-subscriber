@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-05
+
 ### Added
 
 - `call` サブコマンド: 任意の MCP tool を単発 `tools/call` 呼び出しして結果を stdout に出力し終了するモードを追加（#111）。subscribe と同じ `--url` / `--auth-token` / `--login` トークンキャッシュ・自動 refresh / `--timeout-ms` / `--json` を再利用
@@ -165,9 +167,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Notes
 
-- `src/server/mcpServer.ts` and `src/client/probeClient.ts` contain hardcoded version strings. These must be updated manually on each version bump until dynamic `package.json` reading is added.
+- `src/server/mcpServer.ts`, `src/client/probeClient.ts`, and `src/client/callClient.ts` contain hardcoded version strings. These must be updated manually on each version bump until dynamic `package.json` reading is added.
 
-[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.3...v0.1.4
