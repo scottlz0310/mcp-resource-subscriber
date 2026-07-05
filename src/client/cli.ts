@@ -2,9 +2,12 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { AuthLoginRequiredError, AuthTimeoutError, loginToGateway, resolveCachedToken } from "./auth/gatewayAuth.js";
 import { OAuthRequestError } from "./auth/oauthClient.js";
 import { openTokenStore, tokenStoreExists } from "./auth/tokenStore.js";
+import { runToolCall } from "./callClient.js";
+import { buildCallErrorJsonOutput, buildCallJsonOutput } from "./callJsonOutput.js";
 import { buildErrorJsonOutput, buildJsonOutput } from "./jsonOutput.js";
 import { extractRecommendedAction, runSubscribeProbe } from "./probeClient.js";
 
@@ -66,6 +69,15 @@ if (args.includes("--help") || args.includes("-h")) {
   console.log(
     "  mcp-resource-subscriber --url <server-url> [--uri <resource-uri>] [--auth-token <tok>] [--skip-resource-list-check] [--timeout-ms <ms>] [--json]",
   );
+  console.log(
+    "  mcp-resource-subscriber call --url <server-url> --tool <name> [--args <json>] [--auth-token <tok>] [--timeout-ms <ms>] [--json]",
+  );
+  console.log("");
+  console.log("Call mode (single tools/call invocation, then exit):");
+  console.log("  --tool <name>       MCP tool name to invoke (required)");
+  console.log("  --args <json>       JSON object of tool arguments (default: {})");
+  console.log("  Reuses --url, --auth-token, --login cache, --timeout-ms, --json from below.");
+  console.log("  Exit codes: 0 success, 1 tool error (isError), 2 auth error, 3 communication/usage error.");
   console.log("");
   console.log("Options:");
   console.log("  --url <url>         MCP server Streamable HTTP endpoint");
@@ -114,6 +126,13 @@ if (args.includes("--help") || args.includes("-h")) {
   console.log("");
   console.log("  # One-time interactive login against an mcp-gateway:");
   console.log("  mcp-resource-subscriber --login --url http://127.0.0.1:8080/mcp/subscribe-probe");
+  console.log("");
+  console.log("  # Call an MCP tool once and exit (uses the same --login token cache):");
+  console.log("  mcp-resource-subscriber call \\");
+  console.log("    --url https://gateway.example/mcp/thread-owl \\");
+  console.log("    --tool enqueue_review \\");
+  console.log('    --args \'{"owner":"scottlz0310","repo":"example","prNumber":123}\' \\');
+  console.log("    --json");
   console.log("");
   console.log("  # Remove the cached token set for a gateway (e.g. after it was rebuilt):");
   console.log("  mcp-resource-subscriber --logout --url http://127.0.0.1:8080/mcp/subscribe-probe");
@@ -278,81 +297,223 @@ function printResult(result: Awaited<ReturnType<typeof runSubscribeProbe>>, url:
   console.log(`phase-summary route=${result.route} url=${url} uri=${uri}${errorPart}`);
 }
 
-// Capture context outside try so the catch block can report actuals instead of unknowns.
-// Use peekOption (no-throw) so malformed args don't produce a bare stack trace before the try.
-const jsonMode = args.includes("--json");
-let capturedUrl: string | null = peekOption("url") ?? process.env.MCP_PROBE_URL ?? null;
-let capturedUri: string = peekOption("uri") ?? process.env.MCP_PROBE_URI ?? REVIEW_STATUS_URI;
+/**
+ * `call` mode: initialize → tools/call → print result. Reuses the same
+ * --url / --auth-token / --login token cache / --timeout-ms / --json flags as
+ * subscribe mode. Exit codes are distinct per outcome (unlike subscribe mode's
+ * flat 0/1) so callers such as squirrel-notifier can branch without parsing
+ * stdout: 0 success, 1 tool-level error (isError), 2 auth error, 3
+ * communication/usage error.
+ *
+ * Sets `process.exitCode` and returns rather than calling `process.exit()`:
+ * forcing immediate termination right after the SDK's Streamable HTTP
+ * transport closes its SSE stream crashes Node on Windows (libuv assertion
+ * `!(handle->flags & UV_HANDLE_CLOSING)` in src/win/async.c) roughly a third
+ * of the time. Letting the event loop drain naturally avoids the race.
+ */
+async function runCallCommand(): Promise<void> {
+  const jsonMode = args.includes("--json");
 
-try {
-  const options = parseOptions();
-  capturedUrl = options.url;
-  capturedUri = options.uri;
-
-  if (options.url === null) {
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(buildErrorJsonOutput("SERVER_URL_UNKNOWN", null, options.uri))}\n`);
+  // Prints the same key set (server-url/tool/is-error/error-code/content) as
+  // the success path below so line-based output has one consistent shape for
+  // machine parsers, matching the --json error shape (isError: true, content: null).
+  function emitError(errorCode: string, exitCode: number, url: string | null, tool: string | null): void {
+    if (jsonMode) {
+      process.stdout.write(`${JSON.stringify(buildCallErrorJsonOutput(errorCode, url, tool))}\n`);
     } else {
-      console.log("error-code SERVER_URL_UNKNOWN");
-      console.log("phase-summary route=failed url=unknown error-code=SERVER_URL_UNKNOWN");
+      console.log(`server-url ${url ?? "unknown"}`);
+      console.log(`tool ${tool ?? "unknown"}`);
+      console.log("is-error true");
+      console.log(`error-code ${errorCode}`);
+      console.log("content");
+      console.log("null");
     }
-    process.exitCode = 1;
-  } else {
-    if (options.uri === REVIEW_STATUS_URI && !readOption("uri") && !process.env.MCP_PROBE_URI) {
-      console.warn(
-        "warning: using default URI test://review/status which is only meaningful against the bundled test server",
-      );
+    process.exitCode = exitCode;
+  }
+
+  let url: string | null = null;
+  let tool: string | null = null;
+  let timeoutMs = 15000;
+  let toolArgs: Record<string, unknown> = {};
+  let authToken: string | null = null;
+  let authTokenFromFlag = false;
+
+  try {
+    url = readOption("url") ?? process.env.MCP_PROBE_URL ?? null;
+    tool = readOption("tool") ?? null;
+    const timeoutRaw = readOption("timeout-ms") ?? process.env.MCP_PROBE_TIMEOUT_MS ?? "15000";
+    timeoutMs = Number(timeoutRaw);
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      throw new Error(`Invalid --timeout-ms: ${timeoutRaw}`);
     }
-    if (options.authTokenFromFlag) {
-      console.warn(
-        "warning: --auth-token value is visible in process lists and may be stored in shell history. Prefer MCP_PROBE_AUTH_TOKEN env var.",
-      );
+    const authTokenFlag = readOption("auth-token");
+    authToken = authTokenFlag ?? process.env.MCP_PROBE_AUTH_TOKEN ?? null;
+    authTokenFromFlag = authTokenFlag !== undefined;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`call failed: ${message}`);
+    emitError("INTERNAL_ERROR", 3, url, tool);
+    return;
+  }
+
+  if (url === null) {
+    emitError("SERVER_URL_UNKNOWN", 3, url, tool);
+    return;
+  }
+  if (tool === null) {
+    emitError("TOOL_NAME_REQUIRED", 3, url, tool);
+    return;
+  }
+
+  try {
+    const argsRaw = readOption("args") ?? "{}";
+    const parsed: unknown = JSON.parse(argsRaw);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("--args must be a JSON object");
     }
+    toolArgs = parsed as Record<string, unknown>;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`call failed: invalid --args: ${message}`);
+    emitError("INVALID_ARGS", 3, url, tool);
+    return;
+  }
+
+  if (authTokenFromFlag) {
+    console.warn(
+      "warning: --auth-token value is visible in process lists and may be stored in shell history. Prefer MCP_PROBE_AUTH_TOKEN env var.",
+    );
+  }
+
+  try {
     const authStart = Date.now();
-    const bearerToken = await resolveBearerToken(options.url, options.authToken, options.timeoutMs);
-    const remainingTimeoutMs = Math.max(0, options.timeoutMs - (Date.now() - authStart));
-    const result = await runSubscribeProbe({
-      url: options.url,
-      uri: options.uri,
+    const bearerToken = await resolveBearerToken(url, authToken, timeoutMs);
+    const remainingTimeoutMs = Math.max(0, timeoutMs - (Date.now() - authStart));
+    const result = await runToolCall({
+      url,
+      tool,
+      args: toolArgs,
       timeoutMs: remainingTimeoutMs,
       requestHeaders: bearerToken ? { Authorization: `Bearer ${bearerToken}` } : undefined,
-      skipResourceListCheck: options.skipResourceListCheck,
     });
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(buildJsonOutput(result, options.url, options.uri))}\n`);
+
+    if (jsonMode) {
+      process.stdout.write(`${JSON.stringify(buildCallJsonOutput(result, url, tool))}\n`);
     } else {
-      printResult(result, options.url, options.uri);
+      console.log(`server-url ${url}`);
+      console.log(`tool ${tool}`);
+      console.log(`is-error ${result.isError}`);
+      console.log(`error-code ${result.isError ? "TOOL_ERROR" : "null"}`);
+      console.log("content");
+      console.log(JSON.stringify(result.content));
     }
-    if (result.errorCode) {
+    if (result.isError) {
       process.exitCode = 1;
     }
+  } catch (error) {
+    let errorCode = "CALL_FAILED";
+    let exitCode = 3;
+    if (error instanceof AuthLoginRequiredError) {
+      errorCode = "AUTH_LOGIN_REQUIRED";
+      exitCode = 2;
+      console.error(`hint: run \`mcp-resource-subscriber --login --url ${url}\` to re-authenticate`);
+    } else if (error instanceof AuthTimeoutError) {
+      errorCode = "AUTH_TIMEOUT";
+      exitCode = 2;
+    } else if (error instanceof OAuthRequestError) {
+      errorCode = "AUTH_REFRESH_FAILED";
+      exitCode = 2;
+    } else if (error instanceof StreamableHTTPError && (error.code === 401 || error.code === 403)) {
+      errorCode = "AUTH_FAILED";
+      exitCode = 2;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`call failed: ${message}`);
+    emitError(errorCode, exitCode, url, tool);
   }
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`subscribe-probe failed: ${message}`);
-  let errorCode = "INTERNAL_ERROR";
-  if (error instanceof AuthLoginRequiredError) {
-    errorCode = "AUTH_LOGIN_REQUIRED";
-    console.error(
-      `hint: run \`mcp-resource-subscriber --login --url ${capturedUrl ?? "<gateway-url>"}\` to re-authenticate`,
-    );
-  } else if (error instanceof AuthTimeoutError) {
-    // The gateway accepted the connection but never responded within the
-    // --timeout-ms budget; cached credentials may still be fine, so a plain
-    // retry (unlike AUTH_LOGIN_REQUIRED) is reasonable.
-    errorCode = "AUTH_TIMEOUT";
-  } else if (error instanceof OAuthRequestError) {
-    // Transient gateway-side refresh failure (5xx / temporarily_unavailable);
-    // the refresh token was restored server-side, so a plain retry is enough.
-    errorCode = "AUTH_REFRESH_FAILED";
+}
+
+if (args[0] === "call") {
+  // call mode has its own argument parsing / output / exit-code scheme;
+  // never fall through into the subscribe flow below.
+  await runCallCommand();
+} else {
+  // Capture context outside try so the catch block can report actuals instead of unknowns.
+  // Use peekOption (no-throw) so malformed args don't produce a bare stack trace before the try.
+  const jsonMode = args.includes("--json");
+  let capturedUrl: string | null = peekOption("url") ?? process.env.MCP_PROBE_URL ?? null;
+  let capturedUri: string = peekOption("uri") ?? process.env.MCP_PROBE_URI ?? REVIEW_STATUS_URI;
+
+  try {
+    const options = parseOptions();
+    capturedUrl = options.url;
+    capturedUri = options.uri;
+
+    if (options.url === null) {
+      if (options.json) {
+        process.stdout.write(`${JSON.stringify(buildErrorJsonOutput("SERVER_URL_UNKNOWN", null, options.uri))}\n`);
+      } else {
+        console.log("error-code SERVER_URL_UNKNOWN");
+        console.log("phase-summary route=failed url=unknown error-code=SERVER_URL_UNKNOWN");
+      }
+      process.exitCode = 1;
+    } else {
+      if (options.uri === REVIEW_STATUS_URI && !readOption("uri") && !process.env.MCP_PROBE_URI) {
+        console.warn(
+          "warning: using default URI test://review/status which is only meaningful against the bundled test server",
+        );
+      }
+      if (options.authTokenFromFlag) {
+        console.warn(
+          "warning: --auth-token value is visible in process lists and may be stored in shell history. Prefer MCP_PROBE_AUTH_TOKEN env var.",
+        );
+      }
+      const authStart = Date.now();
+      const bearerToken = await resolveBearerToken(options.url, options.authToken, options.timeoutMs);
+      const remainingTimeoutMs = Math.max(0, options.timeoutMs - (Date.now() - authStart));
+      const result = await runSubscribeProbe({
+        url: options.url,
+        uri: options.uri,
+        timeoutMs: remainingTimeoutMs,
+        requestHeaders: bearerToken ? { Authorization: `Bearer ${bearerToken}` } : undefined,
+        skipResourceListCheck: options.skipResourceListCheck,
+      });
+      if (options.json) {
+        process.stdout.write(`${JSON.stringify(buildJsonOutput(result, options.url, options.uri))}\n`);
+      } else {
+        printResult(result, options.url, options.uri);
+      }
+      if (result.errorCode) {
+        process.exitCode = 1;
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`subscribe-probe failed: ${message}`);
+    let errorCode = "INTERNAL_ERROR";
+    if (error instanceof AuthLoginRequiredError) {
+      errorCode = "AUTH_LOGIN_REQUIRED";
+      console.error(
+        `hint: run \`mcp-resource-subscriber --login --url ${capturedUrl ?? "<gateway-url>"}\` to re-authenticate`,
+      );
+    } else if (error instanceof AuthTimeoutError) {
+      // The gateway accepted the connection but never responded within the
+      // --timeout-ms budget; cached credentials may still be fine, so a plain
+      // retry (unlike AUTH_LOGIN_REQUIRED) is reasonable.
+      errorCode = "AUTH_TIMEOUT";
+    } else if (error instanceof OAuthRequestError) {
+      // Transient gateway-side refresh failure (5xx / temporarily_unavailable);
+      // the refresh token was restored server-side, so a plain retry is enough.
+      errorCode = "AUTH_REFRESH_FAILED";
+    }
+    if (jsonMode) {
+      process.stdout.write(`${JSON.stringify(buildErrorJsonOutput(errorCode, capturedUrl, capturedUri))}\n`);
+    } else {
+      console.log(`error-code ${errorCode}`);
+      console.log(
+        `phase-summary route=failed url=${capturedUrl ?? "unknown"} uri=${capturedUri} error-code=${errorCode}`,
+      );
+    }
+    process.exitCode = 1;
   }
-  if (jsonMode) {
-    process.stdout.write(`${JSON.stringify(buildErrorJsonOutput(errorCode, capturedUrl, capturedUri))}\n`);
-  } else {
-    console.log(`error-code ${errorCode}`);
-    console.log(
-      `phase-summary route=failed url=${capturedUrl ?? "unknown"} uri=${capturedUri} error-code=${errorCode}`,
-    );
-  }
-  process.exitCode = 1;
 }

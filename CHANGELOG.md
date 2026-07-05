@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `call` サブコマンド: 任意の MCP tool を単発 `tools/call` 呼び出しして結果を stdout に出力し終了するモードを追加（#111）。subscribe と同じ `--url` / `--auth-token` / `--login` トークンキャッシュ・自動 refresh / `--timeout-ms` / `--json` を再利用
+  - 引数: `--tool <name>`（必須）、`--args <json>`（省略時 `{}`）
+  - exit code: 成功 `0` / tool エラー（`isError: true`）`1` / 認証エラー `2` / 通信・引数エラー `3`（`error-code`: `SERVER_URL_UNKNOWN`, `TOOL_NAME_REQUIRED`, `INVALID_ARGS`, `CALL_FAILED`, `INTERNAL_ERROR`, `AUTH_LOGIN_REQUIRED`, `AUTH_TIMEOUT`, `AUTH_REFRESH_FAILED`, `AUTH_FAILED`）
+  - `--json` 出力: `{ serverUrl, tool, isError, errorCode, content }`（`content` は `CallToolResult.content` をそのまま反映）
+  - 同梱テストサーバーに `echo_tool`（`call` モードのテスト用: `shouldError: true` で `isError: true` を模擬）を追加
+
+### Fixed
+
+- `call` モードで `runToolCall()` 完了直後に `process.exit()` を呼ぶと、Streamable HTTP transport の SSE ストリームを閉じた直後という条件で Windows 上の libuv アサーション（`!(handle->flags & UV_HANDLE_CLOSING)`, `src/win/async.c`）が確率的にクラッシュしていたのを修正。`process.exitCode` を設定して自然終了させる方式に変更
+- `call` モードで `--timeout-ms` が `callTool()` にしか適用されておらず、直前の `client.connect()`（initialize）は SDK 既定の 60 秒 timeout のままだったのを修正（thread-owl review）。応答しない Streamable HTTP server に対して認証後の残り時間から単一 deadline を作り、`initialize` と `tools/call` の両方を同じ予算に束縛するよう変更。initialize がハングするケースの wall-clock 回帰テストを追加
+- `call` モードの line-based（非 JSON）出力で、pre-tool-call / 認証エラー / 通信エラー時に `is-error` と `content` が欠落し、成功時と出力形状が不一致だったのを修正（Copilot review）。エラー時も `is-error true` / `content` に `null` を出力し、成功時と同じ5フィールドの形状に統一
+
+### Internal
+
+- `test/callClient.test.ts` を追加: `runToolCall()` / `buildCallJsonOutput()` / `buildCallErrorJsonOutput()` の in-process ユニットテスト（`test/call.test.ts` は CLI サブプロセステストのため、親プロセスのカバレッジ計測に含まれない点を補完）
+
 ## [0.3.0] - 2026-07-04
 
 ### Added

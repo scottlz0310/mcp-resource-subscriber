@@ -4,7 +4,7 @@
 
 本リポジトリは、MCP `resources/subscribe` の**互換性検証スパイク**として開始した。CLI AI エージェント（Codex, Gemini, Claude Code, Crush 等）が MCP resource subscription を正しく処理できるかを、再現可能な形でテストするためのものである。この検証フェーズは既に完了しており、現在は以下の 2 つの実運用向けコンポーネントを提供する:
 
-1. **CLI probe**（`mcp-resource-subscriber`、`src/client/cli.ts`）— CLI エージェントのワークフローや外部ツール（例: `squirrel-notifier`）が、MCP resource を subscribe して `notifications/resources/updated` を待ち、結果を構造化された stdout/JSON として報告させるために呼び出す、公開済みのサブプロセス。mcp-gateway 向け認証（`--login` / `--logout`、キャッシュ済みトークンの自動更新）も担い、これらの呼び出し元がトークンを手動で用意する必要をなくす。
+1. **CLI probe**（`mcp-resource-subscriber`、`src/client/cli.ts`）— CLI エージェントのワークフローや外部ツール（例: `squirrel-notifier`）が、MCP resource を subscribe して `notifications/resources/updated` を待ち、結果を構造化された stdout/JSON として報告させるために呼び出す、公開済みのサブプロセス。mcp-gateway 向け認証（`--login` / `--logout`、キャッシュ済みトークンの自動更新）も担い、これらの呼び出し元がトークンを手動で用意する必要をなくす。`call` サブコマンド（`--tool` / `--args`）は、subscribe とは別に任意の MCP tool を単発 `tools/call` 呼び出しして即終了するモードで、同じ認証経路を再利用する（#111）。
 2. **リファレンス MCP Streamable HTTP サーバー**（`src/server/`）— クライアントが subscribe した後に更新される 1 つの resource（`test://review/status`）を公開し、`notifications/resources/updated` を送信する。probe クライアントのローカル / Docker テスト用に維持されており、本番トラフィック向けではない。
 
 ## 必須コマンド
@@ -39,7 +39,9 @@ src/
     logger.ts        — createConsoleLogger(config): logLevel が 'silent' でない限り全行を出力する LogSink を返す（レベル階層フィルタなし）
   client/
     probeClient.ts   — runSubscribeProbe(): 全フローを実行し型付き結果を返す SDK クライアント
-    cli.ts           — 公開 bin エントリ; --url, --uri, --auth-token, --login, --logout, --skip-resource-list-check, --timeout-ms をサポート
+    callClient.ts    — runToolCall(): call サブコマンド用、単発 tools/call を実行し型付き結果を返す SDK クライアント
+    callJsonOutput.ts — call サブコマンドの --json 出力スキーマ（CallJsonOutput）
+    cli.ts           — 公開 bin エントリ; --url, --uri, --auth-token, --login, --logout, --skip-resource-list-check, --timeout-ms に加え `call` サブコマンド（--tool, --args）をサポート
     auth/
       tokenStore.ts  — node:sqlite トークンキャッシュ（gateway origin 単位で 1 行、OS state dir、0600）; withExclusiveLock() は任意の timeoutMs を受け取り、BEGIN IMMEDIATE の同期的な待機がそれを超えないよう busy_timeout を一時的に下げる（LockTimeoutError を送出）
       oauthClient.ts — RFC 8414 discovery / RFC 7591 DCR / RFC 8628 device flow / refresh grant（fetch + sleep を注入可能）
@@ -56,6 +58,7 @@ test/
   oauthClient.test.ts             — in-process モック認可サーバーに対する device flow / refresh
   gatewayAuth.test.ts             — login + キャッシュ済みトークン解決（refresh, rotation, re-login エラー, AUTH_TIMEOUT）
   cliAuth.test.ts                 — CLI サブプロセス認証統合（--login, --logout, キャッシュ優先順位, AUTH_LOGIN_REQUIRED, AUTH_TIMEOUT）
+  call.test.ts                    — call サブコマンドの CLI サブプロセステスト（引数パース、成功、tool エラー、認証エラー、通信エラー、exit code 0/1/2/3）
   helpers/mockAuthServer.ts       — mcp-gateway の OAuth surface を模した express モック
 ```
 
@@ -123,6 +126,8 @@ test/
 ## CLI の状態
 
 `src/client/cli.ts` は公開 bin エントリ（`dist/src/client/cli.js`）。`--url`、`--uri`、`--auth-token`、`--login`、`--logout`、`--skip-resource-list-check`、`--timeout-ms`、`--version`、`--help` をサポートする。実際の probe 機能は `src/client/probeClient.ts` にある。
+
+**`call` サブコマンド**（第一引数が `"call"` の場合、`src/client/cli.ts` 内 `runCallCommand()`）: `--url`、`--tool`、`--args`（JSON、省略時 `{}`）、`--auth-token`、`--timeout-ms`、`--json` を受け取り、`initialize` → `tools/call` → 結果を stdout に出力して終了する（実体は `src/client/callClient.ts` の `runToolCall()`）。認証は subscribe と同じ `resolveBearerToken()` / token cache / auto-refresh をそのまま再利用する。exit code は成功 0 / tool エラー(`isError: true`) 1 / 認証エラー 2 / 通信・引数エラー 3 の 4 値に分かれ、subscribe モードの「常に 0 か 1」とは異なる（squirrel-notifier 等の呼び出し元が stdout をパースせず `$?` だけで分岐できるようにするため）。**注意**: `runToolCall()` の呼び出し完了後（`client.close()` 後）は `process.exit()` を呼ばず `process.exitCode` を設定して自然終了させること — Streamable HTTP transport の SSE ストリームを閉じた直後に `process.exit()` すると、Windows 上で libuv のアサーション（`!(handle->flags & UV_HANDLE_CLOSING)`, `src/win/async.c`）が確率的にクラッシュを起こす。ネットワーク I/O を伴わない早期のバリデーションエラー（`--url`/`--tool` 未指定、`--args` の JSON 不正、`--timeout-ms` 不正）も同様に `process.exitCode` 方式に統一している。
 
 **Gateway auth の優先順位**（`src/client/auth/`）: 明示的な `--auth-token` / `MCP_PROBE_AUTH_TOKEN` は常に優先される; そうでなければ `--url` の origin に対する SQLite トークンキャッシュが参照される（rotation 永続化を伴う自動 refresh）; probe の実行はキャッシュを作成しない — 作成するのは `--login` のみ。`MCP_PROBE_TOKEN_STORE_PATH` はキャッシュパスを上書きする（テストはこれによる分離に依存）。`--logout` は `--url` の origin に対応するキャッシュ済みエントリを削除する（ストアが未作成なら no-op）。gateway からの `invalid_client` / `unauthorized_client`（例: 再構築後）は `AuthLoginRequiredError` として扱われ、`loginToGateway` はキャッシュ済み `client_id` が拒否された場合に re-register へ自動フォールバックする。`resolveCachedToken` の refresh パス — cross-process ロック待機 *および* ネットワーク呼び出し（endpoint discovery + refresh grant）— は同じ `--timeout-ms` 予算に束縛される: デッドラインは `withExclusiveLock()` 取得前に計算され、`withExclusiveLock()` 自身がその `timeoutMs` を受け取って SQLite の `busy_timeout` を一時的に下げることで `BEGIN IMMEDIATE` の同期待機がそれを黙って超過できないようにする（超過時は `LockTimeoutError` を送出）。ネットワーク呼び出しに渡される `AbortSignal.timeout()` は、ロック取得後に残った予算を使う（既に使い切っている場合は、失敗が確定しているネットワーク呼び出しを開始せず即座に失敗する）。いずれかの上限を超えると `AuthTimeoutError` → `error-code AUTH_TIMEOUT` を送出し、CLI は auth 解決に費やした時間を差し引いた残り予算を `runSubscribeProbe` に渡す。
 
