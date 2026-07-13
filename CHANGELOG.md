@@ -7,10 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-13
+
 ### Added
 
 - TLS 証明書不信頼（`UNABLE_TO_VERIFY_LEAF_SIGNATURE` / `DEPTH_ZERO_SELF_SIGNED_CERT` / `SELF_SIGNED_CERT_IN_CHAIN` / `CERT_HAS_EXPIRED` 等）、DNS 解決失敗（`ENOTFOUND`）、接続拒否（`ECONNREFUSED`）を、それぞれ専用の `errorCode`（`TLS_CERT_UNTRUSTED` / `DNS_LOOKUP_FAILED` / `CONNECTION_REFUSED`）に分類するようになった（#120）。これまでは `subscribe` / `call` 両モードとも `INTERNAL_ERROR` / `CALL_FAILED` に丸められ、原因の切り分けができなかった。`--json` 出力・line-based 出力（`recommended-next-action`）の両方に対処法（`NODE_EXTRA_CA_CERTS` の設定案内等）を含む `recommendedNextAction` を追加
   - `call` モードの `--json` 出力（`CallJsonOutput`）に `recommendedNextAction` フィールドを新規追加（成功時・`TOOL_ERROR` 時は `null`）
+
+### Changed
+
+- 動作に必要な Node.js の最低バージョンを `>=26.4.0` から `>=26.5.0` に引き上げ（Renovate #121）。`>=26.5.0` 未満の Node で `pnpm install` / `pnpm run build` を実行すると `engines` 警告が出る
 
 ### Fixed
 
@@ -177,9 +183,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Notes
 
-- `src/server/mcpServer.ts`, `src/client/probeClient.ts`, and `src/client/callClient.ts` contain hardcoded version strings. These must be updated manually on each version bump until dynamic `package.json` reading is added.
+- `src/server/mcpServer.ts` contains a hardcoded version string (bundled test server, not part of the published npm package). This must be updated manually on each version bump. `src/client/probeClient.ts` / `src/client/callClient.ts` resolve their version dynamically from `package.json` as of v0.5.0 and no longer need manual updates.
 
-[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.1.4...v0.2.0
