@@ -395,6 +395,7 @@ async function runCallCommand(): Promise<void> {
       args: toolArgs,
       timeoutMs: remainingTimeoutMs,
       requestHeaders: bearerToken ? { Authorization: `Bearer ${bearerToken}` } : undefined,
+      clientVersion: pkg.version,
     });
 
     if (jsonMode) {
@@ -477,6 +478,7 @@ if (args[0] === "call") {
         timeoutMs: remainingTimeoutMs,
         requestHeaders: bearerToken ? { Authorization: `Bearer ${bearerToken}` } : undefined,
         skipResourceListCheck: options.skipResourceListCheck,
+        clientVersion: pkg.version,
       });
       if (options.json) {
         process.stdout.write(`${JSON.stringify(buildJsonOutput(result, options.url, options.uri))}\n`);
