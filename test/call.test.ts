@@ -174,7 +174,7 @@ describe("call subcommand: success", () => {
     }
   }, 10_000);
 
-  it("line-based mode: prints server-url/tool/is-error/content lines", async () => {
+  it("line-based mode: prints server-url/tool/is-error/error-code/recommended-next-action/content lines", async () => {
     const { url, close } = await startTestServer();
     try {
       const result = await runCli(["--url", url, "--tool", "echo_tool", "--args", '{"message":"hi-there"}']);
@@ -184,6 +184,7 @@ describe("call subcommand: success", () => {
       expect(result.stdout).toContain("tool echo_tool");
       expect(result.stdout).toContain("is-error false");
       expect(result.stdout).toContain("error-code null");
+      expect(result.stdout).toContain("recommended-next-action null");
       expect(result.stdout).toContain("hi-there");
     } finally {
       await close();
@@ -228,7 +229,7 @@ describe("call subcommand: tool error", () => {
     }
   }, 10_000);
 
-  it("line-based mode: is-error true and error-code TOOL_ERROR", async () => {
+  it("line-based mode: is-error true, error-code TOOL_ERROR, recommended-next-action null", async () => {
     const { url, close } = await startTestServer();
     try {
       const result = await runCli(["--url", url, "--tool", "echo_tool", "--args", '{"shouldError":true}']);
@@ -236,6 +237,7 @@ describe("call subcommand: tool error", () => {
       expect(result.exitCode).toBe(1);
       expect(result.stdout).toContain("is-error true");
       expect(result.stdout).toContain("error-code TOOL_ERROR");
+      expect(result.stdout).toContain("recommended-next-action null");
     } finally {
       await close();
     }
@@ -251,6 +253,19 @@ describe("call subcommand: communication error", () => {
     const json = JSON.parse(result.stdout) as CallJsonOutput;
     expect(json.errorCode).toBe("CONNECTION_REFUSED");
     expect(json.recommendedNextAction).toContain("--url");
+  }, 10_000);
+
+  it("line-based mode: communication error prints the same field set as success/tool-error", async () => {
+    const url = await getClosedPortUrl();
+    const result = await runCli(["--url", url, "--tool", "echo_tool", "--timeout-ms", "2000"]);
+
+    expect(result.exitCode).toBe(3);
+    expect(result.stdout).toContain(`server-url ${url}`);
+    expect(result.stdout).toContain("tool echo_tool");
+    expect(result.stdout).toContain("is-error true");
+    expect(result.stdout).toContain("error-code CONNECTION_REFUSED");
+    expect(result.stdout).toContain("recommended-next-action The server refused the connection");
+    expect(result.stdout).toContain("content");
   }, 10_000);
 
   it("unresolvable hostname fails with DNS_LOOKUP_FAILED, exit code 3", async () => {

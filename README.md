@@ -229,11 +229,13 @@ without parsing stdout:
 
 `content` is the raw MCP `CallToolResult.content` array (verbatim from the
 server); parse it yourself if it contains JSON text. Line-based (non-JSON)
-output always prints the same five fields — `server-url`, `tool`, `is-error`,
-`error-code`, and a `content` block — for both success and error outcomes, so
-machine parsers can rely on a single shape: `content` is the
-JSON-stringified content array on success, or the literal `null` when the
-call never reached the tool (e.g. a communication or auth error).
+output always prints the same six fields — `server-url`, `tool`, `is-error`,
+`error-code`, `recommended-next-action`, and a `content` block — for both
+success and error outcomes, so machine parsers can rely on a single shape:
+`content` is the JSON-stringified content array on success, or the literal
+`null` when the call never reached the tool (e.g. a communication or auth
+error); `recommended-next-action` is `null` except on network-level errors
+(see [Network error classification](#network-error-classification)).
 
 > **Note**: an MCP server may itself report "unknown tool name" as a normal
 > tool result with `isError: true` rather than a protocol-level failure (this

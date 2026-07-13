@@ -315,9 +315,10 @@ function printResult(result: Awaited<ReturnType<typeof runSubscribeProbe>>, url:
 async function runCallCommand(): Promise<void> {
   const jsonMode = args.includes("--json");
 
-  // Prints the same key set (server-url/tool/is-error/error-code/content) as
-  // the success path below so line-based output has one consistent shape for
-  // machine parsers, matching the --json error shape (isError: true, content: null).
+  // Prints the same key set (server-url/tool/is-error/error-code/
+  // recommended-next-action/content) as the success path below so line-based
+  // output has one consistent shape for machine parsers, matching the --json
+  // error shape (isError: true, content: null).
   function emitError(
     errorCode: string,
     exitCode: number,
@@ -415,6 +416,7 @@ async function runCallCommand(): Promise<void> {
       console.log(`tool ${tool}`);
       console.log(`is-error ${result.isError}`);
       console.log(`error-code ${result.isError ? "TOOL_ERROR" : "null"}`);
+      console.log("recommended-next-action null");
       console.log("content");
       console.log(JSON.stringify(result.content));
     }
