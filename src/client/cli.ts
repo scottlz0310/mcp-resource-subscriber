@@ -9,6 +9,7 @@ import { openTokenStore, tokenStoreExists } from "./auth/tokenStore.js";
 import { runToolCall } from "./callClient.js";
 import { buildCallErrorJsonOutput, buildCallJsonOutput } from "./callJsonOutput.js";
 import { buildErrorJsonOutput, buildJsonOutput } from "./jsonOutput.js";
+import { classifyNetworkError } from "./networkErrorClassification.js";
 import { extractRecommendedAction, runSubscribeProbe } from "./probeClient.js";
 
 // Default URI for the bundled reference server
@@ -317,14 +318,23 @@ async function runCallCommand(): Promise<void> {
   // Prints the same key set (server-url/tool/is-error/error-code/content) as
   // the success path below so line-based output has one consistent shape for
   // machine parsers, matching the --json error shape (isError: true, content: null).
-  function emitError(errorCode: string, exitCode: number, url: string | null, tool: string | null): void {
+  function emitError(
+    errorCode: string,
+    exitCode: number,
+    url: string | null,
+    tool: string | null,
+    recommendedNextAction: string | null = null,
+  ): void {
     if (jsonMode) {
-      process.stdout.write(`${JSON.stringify(buildCallErrorJsonOutput(errorCode, url, tool))}\n`);
+      process.stdout.write(
+        `${JSON.stringify(buildCallErrorJsonOutput(errorCode, url, tool, recommendedNextAction))}\n`,
+      );
     } else {
       console.log(`server-url ${url ?? "unknown"}`);
       console.log(`tool ${tool ?? "unknown"}`);
       console.log("is-error true");
       console.log(`error-code ${errorCode}`);
+      console.log(`recommended-next-action ${recommendedNextAction ?? "null"}`);
       console.log("content");
       console.log("null");
     }
@@ -414,6 +424,7 @@ async function runCallCommand(): Promise<void> {
   } catch (error) {
     let errorCode = "CALL_FAILED";
     let exitCode = 3;
+    let recommendedNextAction: string | null = null;
     if (error instanceof AuthLoginRequiredError) {
       errorCode = "AUTH_LOGIN_REQUIRED";
       exitCode = 2;
@@ -427,10 +438,17 @@ async function runCallCommand(): Promise<void> {
     } else if (error instanceof StreamableHTTPError && (error.code === 401 || error.code === 403)) {
       errorCode = "AUTH_FAILED";
       exitCode = 2;
+    } else {
+      const classified = classifyNetworkError(error);
+      if (classified) {
+        errorCode = classified.errorCode;
+        recommendedNextAction = classified.recommendedNextAction;
+        console.error(`hint: ${classified.recommendedNextAction}`);
+      }
     }
     const message = error instanceof Error ? error.message : String(error);
     console.error(`call failed: ${message}`);
-    emitError(errorCode, exitCode, url, tool);
+    emitError(errorCode, exitCode, url, tool, recommendedNextAction);
   }
 }
 
@@ -493,6 +511,7 @@ if (args[0] === "call") {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`subscribe-probe failed: ${message}`);
     let errorCode = "INTERNAL_ERROR";
+    let recommendedNextAction: string | null = null;
     if (error instanceof AuthLoginRequiredError) {
       errorCode = "AUTH_LOGIN_REQUIRED";
       console.error(
@@ -507,11 +526,21 @@ if (args[0] === "call") {
       // Transient gateway-side refresh failure (5xx / temporarily_unavailable);
       // the refresh token was restored server-side, so a plain retry is enough.
       errorCode = "AUTH_REFRESH_FAILED";
+    } else {
+      const classified = classifyNetworkError(error);
+      if (classified) {
+        errorCode = classified.errorCode;
+        recommendedNextAction = classified.recommendedNextAction;
+        console.error(`hint: ${classified.recommendedNextAction}`);
+      }
     }
     if (jsonMode) {
-      process.stdout.write(`${JSON.stringify(buildErrorJsonOutput(errorCode, capturedUrl, capturedUri))}\n`);
+      process.stdout.write(
+        `${JSON.stringify(buildErrorJsonOutput(errorCode, capturedUrl, capturedUri, recommendedNextAction))}\n`,
+      );
     } else {
       console.log(`error-code ${errorCode}`);
+      console.log(`recommended-next-action ${recommendedNextAction ?? "null"}`);
       console.log(
         `phase-summary route=failed url=${capturedUrl ?? "unknown"} uri=${capturedUri} error-code=${errorCode}`,
       );

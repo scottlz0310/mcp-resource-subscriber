@@ -30,7 +30,12 @@ export function buildJsonOutput(result: SubscribeProbeResult, serverUrl: string,
   };
 }
 
-export function buildErrorJsonOutput(errorCode: string, serverUrl: string | null, resourceUri: string): JsonOutput {
+export function buildErrorJsonOutput(
+  errorCode: string,
+  serverUrl: string | null,
+  resourceUri: string,
+  recommendedNextAction: string | null = null,
+): JsonOutput {
   return {
     route: "failed",
     serverUrl,
@@ -42,6 +47,6 @@ export function buildErrorJsonOutput(errorCode: string, serverUrl: string | null
     errorCode,
     initialText: null,
     finalText: null,
-    recommendedNextAction: null,
+    recommendedNextAction,
   };
 }
