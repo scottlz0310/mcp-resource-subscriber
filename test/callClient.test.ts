@@ -109,6 +109,7 @@ describe("buildCallJsonOutput() / buildCallErrorJsonOutput()", () => {
       isError: false,
       errorCode: null,
       content: [{ type: "text", text: "hi" }],
+      recommendedNextAction: null,
     });
   });
 
@@ -132,6 +133,7 @@ describe("buildCallJsonOutput() / buildCallErrorJsonOutput()", () => {
       isError: true,
       errorCode: "CALL_FAILED",
       content: null,
+      recommendedNextAction: null,
     });
   });
 

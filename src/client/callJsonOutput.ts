@@ -6,6 +6,7 @@ export interface CallJsonOutput {
   isError: boolean;
   errorCode: string | null;
   content: unknown;
+  recommendedNextAction: string | null;
 }
 
 export function buildCallJsonOutput(result: ToolCallResult, serverUrl: string, tool: string): CallJsonOutput {
@@ -15,6 +16,7 @@ export function buildCallJsonOutput(result: ToolCallResult, serverUrl: string, t
     isError: result.isError,
     errorCode: result.isError ? "TOOL_ERROR" : null,
     content: result.content,
+    recommendedNextAction: null,
   };
 }
 
@@ -22,6 +24,7 @@ export function buildCallErrorJsonOutput(
   errorCode: string,
   serverUrl: string | null,
   tool: string | null,
+  recommendedNextAction: string | null = null,
 ): CallJsonOutput {
   return {
     serverUrl,
@@ -29,5 +32,6 @@ export function buildCallErrorJsonOutput(
     isError: true,
     errorCode,
     content: null,
+    recommendedNextAction,
   };
 }

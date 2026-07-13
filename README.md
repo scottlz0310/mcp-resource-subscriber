@@ -179,7 +179,7 @@ Failure output (same shape with non-null `errorCode`):
 
 - `route`: `"subscription"` | `"pre-completion"` | `"timeout"` | `"failed"`
 - `notificationReceived`: `true` when `route === "subscription"`
-- `recommendedNextAction`: extracted from `finalText` if present, otherwise `null`
+- `recommendedNextAction`: extracted from `finalText` if present, otherwise `null`. On network-level failures (`TLS_CERT_UNTRUSTED`, `DNS_LOOKUP_FAILED`, `CONNECTION_REFUSED`) this is instead a client-generated remediation hint — see [Network error classification](#network-error-classification) below.
 - If `finalText` is JSON, callers can parse it themselves
 - Diagnostic warnings (e.g. `--auth-token` flag warning) go to stderr and do not corrupt stdout JSON
 
@@ -212,7 +212,7 @@ without parsing stdout:
 | `0` | Success | — |
 | `1` | Tool-level error (the tool ran and returned `isError: true`) | `TOOL_ERROR` |
 | `2` | Auth error | `AUTH_LOGIN_REQUIRED`, `AUTH_TIMEOUT`, `AUTH_REFRESH_FAILED`, `AUTH_FAILED` |
-| `3` | Communication / usage error | `SERVER_URL_UNKNOWN`, `TOOL_NAME_REQUIRED`, `INVALID_ARGS`, `CALL_FAILED`, `INTERNAL_ERROR` |
+| `3` | Communication / usage error | `SERVER_URL_UNKNOWN`, `TOOL_NAME_REQUIRED`, `INVALID_ARGS`, `CALL_FAILED`, `INTERNAL_ERROR`, `TLS_CERT_UNTRUSTED`, `DNS_LOOKUP_FAILED`, `CONNECTION_REFUSED` |
 
 `--json` output shape:
 
@@ -222,17 +222,20 @@ without parsing stdout:
   "tool": "enqueue_review",
   "isError": false,
   "errorCode": null,
-  "content": [{ "type": "text", "text": "..." }]
+  "content": [{ "type": "text", "text": "..." }],
+  "recommendedNextAction": null
 }
 ```
 
 `content` is the raw MCP `CallToolResult.content` array (verbatim from the
 server); parse it yourself if it contains JSON text. Line-based (non-JSON)
-output always prints the same five fields — `server-url`, `tool`, `is-error`,
-`error-code`, and a `content` block — for both success and error outcomes, so
-machine parsers can rely on a single shape: `content` is the
-JSON-stringified content array on success, or the literal `null` when the
-call never reached the tool (e.g. a communication or auth error).
+output always prints the same six fields — `server-url`, `tool`, `is-error`,
+`error-code`, `recommended-next-action`, and a `content` block — for both
+success and error outcomes, so machine parsers can rely on a single shape:
+`content` is the JSON-stringified content array on success, or the literal
+`null` when the call never reached the tool (e.g. a communication or auth
+error); `recommended-next-action` is `null` except on network-level errors
+(see [Network error classification](#network-error-classification)).
 
 > **Note**: an MCP server may itself report "unknown tool name" as a normal
 > tool result with `isError: true` rather than a protocol-level failure (this
@@ -283,6 +286,19 @@ phase-summary route=timeout url=<url> uri=<uri> error-code=RESOURCE_NOT_FOUND
 error-code NOTIFICATION_TIMEOUT
 phase-summary route=timeout url=<url> uri=<uri> error-code=NOTIFICATION_TIMEOUT
 ```
+
+### Network error classification
+
+Low-level network failures that Node's `fetch` otherwise flattens into a
+generic `INTERNAL_ERROR` / `CALL_FAILED` are classified into a dedicated
+`errorCode` with a `recommendedNextAction` remediation hint, in both `subscribe`
+and `call` mode (`--json` and line-based `recommended-next-action <text>`):
+
+| `errorCode` | Cause | Hint |
+|---|---|---|
+| `TLS_CERT_UNTRUSTED` | The server's TLS certificate is not trusted (self-signed, expired, or a local CA not in the trust store — e.g. mkcert) | Set `NODE_EXTRA_CA_CERTS` to the CA root, or run with `NODE_USE_SYSTEM_CA=1` if the CA is in the OS trust store |
+| `DNS_LOOKUP_FAILED` | `--url`'s hostname could not be resolved | Check for typos and DNS connectivity |
+| `CONNECTION_REFUSED` | The server refused the TCP connection | Check that `--url`'s host and port are correct and the server is running |
 
 ---
 

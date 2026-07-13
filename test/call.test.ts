@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { createServer as createTcpServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -63,6 +64,19 @@ async function startTestServer(): Promise<{ url: string; close: () => Promise<vo
   const close = (): Promise<void> =>
     new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   return { url, close };
+}
+
+// Port 1 is on undici's forbidden-port list ("bad port"), which fetch() rejects
+// before ever attempting a TCP connection — it can't produce ECONNREFUSED. Bind
+// an ephemeral port and close it immediately: nothing listens there afterwards,
+// so connecting to it reliably reproduces a real connection-refused error.
+async function getClosedPortUrl(): Promise<string> {
+  const server = createTcpServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address() as AddressInfo;
+  await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  return `http://127.0.0.1:${port}/mcp`;
 }
 
 describe("call subcommand: argument parsing", () => {
@@ -160,7 +174,7 @@ describe("call subcommand: success", () => {
     }
   }, 10_000);
 
-  it("line-based mode: prints server-url/tool/is-error/content lines", async () => {
+  it("line-based mode: prints server-url/tool/is-error/error-code/recommended-next-action/content lines", async () => {
     const { url, close } = await startTestServer();
     try {
       const result = await runCli(["--url", url, "--tool", "echo_tool", "--args", '{"message":"hi-there"}']);
@@ -170,6 +184,7 @@ describe("call subcommand: success", () => {
       expect(result.stdout).toContain("tool echo_tool");
       expect(result.stdout).toContain("is-error false");
       expect(result.stdout).toContain("error-code null");
+      expect(result.stdout).toContain("recommended-next-action null");
       expect(result.stdout).toContain("hi-there");
     } finally {
       await close();
@@ -214,7 +229,7 @@ describe("call subcommand: tool error", () => {
     }
   }, 10_000);
 
-  it("line-based mode: is-error true and error-code TOOL_ERROR", async () => {
+  it("line-based mode: is-error true, error-code TOOL_ERROR, recommended-next-action null", async () => {
     const { url, close } = await startTestServer();
     try {
       const result = await runCli(["--url", url, "--tool", "echo_tool", "--args", '{"shouldError":true}']);
@@ -222,6 +237,7 @@ describe("call subcommand: tool error", () => {
       expect(result.exitCode).toBe(1);
       expect(result.stdout).toContain("is-error true");
       expect(result.stdout).toContain("error-code TOOL_ERROR");
+      expect(result.stdout).toContain("recommended-next-action null");
     } finally {
       await close();
     }
@@ -229,20 +245,44 @@ describe("call subcommand: tool error", () => {
 });
 
 describe("call subcommand: communication error", () => {
-  it("unreachable server fails with CALL_FAILED, exit code 3", async () => {
+  it("unreachable server (connection refused) fails with CONNECTION_REFUSED, exit code 3", async () => {
+    const url = await getClosedPortUrl();
+    const result = await runCli(["--url", url, "--tool", "echo_tool", "--json", "--timeout-ms", "2000"]);
+
+    expect(result.exitCode).toBe(3);
+    const json = JSON.parse(result.stdout) as CallJsonOutput;
+    expect(json.errorCode).toBe("CONNECTION_REFUSED");
+    expect(json.recommendedNextAction).toContain("--url");
+  }, 10_000);
+
+  it("line-based mode: communication error prints the same field set as success/tool-error", async () => {
+    const url = await getClosedPortUrl();
+    const result = await runCli(["--url", url, "--tool", "echo_tool", "--timeout-ms", "2000"]);
+
+    expect(result.exitCode).toBe(3);
+    expect(result.stdout).toContain(`server-url ${url}`);
+    expect(result.stdout).toContain("tool echo_tool");
+    expect(result.stdout).toContain("is-error true");
+    expect(result.stdout).toContain("error-code CONNECTION_REFUSED");
+    expect(result.stdout).toContain("recommended-next-action The server refused the connection");
+    expect(result.stdout).toContain("content");
+  }, 10_000);
+
+  it("unresolvable hostname fails with DNS_LOOKUP_FAILED, exit code 3", async () => {
     const result = await runCli([
       "--url",
-      "http://127.0.0.1:1/mcp",
+      "http://this-host-does-not-exist.invalid/mcp",
       "--tool",
       "echo_tool",
       "--json",
       "--timeout-ms",
-      "2000",
+      "5000",
     ]);
 
     expect(result.exitCode).toBe(3);
     const json = JSON.parse(result.stdout) as CallJsonOutput;
-    expect(json.errorCode).toBe("CALL_FAILED");
+    expect(json.errorCode).toBe("DNS_LOOKUP_FAILED");
+    expect(json.recommendedNextAction).toContain("hostname");
   }, 10_000);
 
   // Regression test for a bug where --timeout-ms only bounded callTool(), not

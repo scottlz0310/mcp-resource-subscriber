@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- TLS 証明書不信頼（`UNABLE_TO_VERIFY_LEAF_SIGNATURE` / `DEPTH_ZERO_SELF_SIGNED_CERT` / `SELF_SIGNED_CERT_IN_CHAIN` / `CERT_HAS_EXPIRED` 等）、DNS 解決失敗（`ENOTFOUND`）、接続拒否（`ECONNREFUSED`）を、それぞれ専用の `errorCode`（`TLS_CERT_UNTRUSTED` / `DNS_LOOKUP_FAILED` / `CONNECTION_REFUSED`）に分類するようになった（#120）。これまでは `subscribe` / `call` 両モードとも `INTERNAL_ERROR` / `CALL_FAILED` に丸められ、原因の切り分けができなかった。`--json` 出力・line-based 出力（`recommended-next-action`）の両方に対処法（`NODE_EXTRA_CA_CERTS` の設定案内等）を含む `recommendedNextAction` を追加
+  - `call` モードの `--json` 出力（`CallJsonOutput`）に `recommendedNextAction` フィールドを新規追加（成功時・`TOOL_ERROR` 時は `null`）
+
 ### Fixed
 
 - リファレンステストサーバーのシャットダウン処理で、生存中の接続（Streamable HTTP の SSE ストリーム等）が残っていると `httpServer.close()` が完了せず、SIGINT / SIGTERM でプロセスが終了できなかったのを修正。`closeAllConnections()` で全接続を即時切断してから終了する
