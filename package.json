@@ -13,7 +13,7 @@
   ],
   "homepage": "https://github.com/scottlz0310/mcp-resource-subscriber",
   "type": "module",
-  "packageManager": "pnpm@11.9.0",
+  "packageManager": "pnpm@11.10.0",
   "license": "MIT",
   "bin": {
     "mcp-resource-subscriber": "dist/src/client/cli.js"
@@ -55,10 +55,10 @@
     "@vitest/coverage-v8": "^4.1.10",
     "lefthook": "^2.1.10",
     "tsx": "^4.23.0",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   },
   "engines": {
-    "node": ">=26.4.0"
+    "node": ">=26.5.0"
   }
 }

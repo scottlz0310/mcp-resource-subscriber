@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- リファレンステストサーバーのシャットダウン処理で、生存中の接続（Streamable HTTP の SSE ストリーム等）が残っていると `httpServer.close()` が完了せず、SIGINT / SIGTERM でプロセスが終了できなかったのを修正。`closeAllConnections()` で全接続を即時切断してから終了する
 - MCP `initialize` で名乗る `clientInfo.version` が `probeClient.ts` / `callClient.ts` に直書きされ、リリースで package.json の version を上げても古いまま取り残されていたのを修正。CLI は `package.json` から解決した実バージョンを `clientVersion` として明示的に渡し、ライブラリとして直接 import され `clientVersion` 未指定の場合はプレースホルダ `0.0.0` を名乗るよう変更
 
 ## [0.4.0] - 2026-07-05
