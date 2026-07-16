@@ -13,7 +13,7 @@
   ],
   "homepage": "https://github.com/scottlz0310/mcp-resource-subscriber",
   "type": "module",
-  "packageManager": "pnpm@11.10.0",
+  "packageManager": "pnpm@11.11.0",
   "license": "MIT",
   "bin": {
     "mcp-resource-subscriber": "dist/src/client/cli.js"
