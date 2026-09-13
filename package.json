@@ -13,7 +13,7 @@
   ],
   "homepage": "https://github.com/scottlz0310/mcp-resource-subscriber",
   "type": "module",
-  "packageManager": "pnpm@11.24.0",
+  "packageManager": "pnpm@11.26.0",
   "license": "MIT",
   "bin": {
     "mcp-resource-subscriber": "dist/src/client/cli.js"
@@ -46,14 +46,14 @@
   "dependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
     "@modelcontextprotocol/core": "^2.0.0",
-    "zod": "^4.5.4"
+    "zod": "^4.6.1"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
     "@modelcontextprotocol/node": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
     "@types/express": "^5.0.6",
-    "@types/node": "^26.4.1",
+    "@types/node": "^26.5.1",
     "@vitest/coverage-v8": "^4.1.11",
     "express": "^5.2.1",
     "lefthook": "^2.1.12",
