@@ -50,7 +50,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
-    "@modelcontextprotocol/node": "^2.1.0",
+    "@modelcontextprotocol/node": "^2.1.1",
     "@modelcontextprotocol/server": "^2.1.0",
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.4",
