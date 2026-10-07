@@ -1,3 +1,5 @@
+> この文書は初期互換性検証の履歴です。旧名・旧protocol・旧レビュー手順を現行の運用指示として使用しないでください。現行CLIは [README](../../../../README.md) と [移行手順](../../../../docs/cli-migration.md) を参照してください。レビュー運用skillの管理元はMcp-Dockerです。
+
 # pr-review-subscribe Tool Template
 
 Copy this template mentally before running the skill and replace the placeholders with the active tool names and resource URI shape in the current Codex session.

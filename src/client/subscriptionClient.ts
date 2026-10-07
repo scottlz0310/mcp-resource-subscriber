@@ -1,12 +1,9 @@
 import { Client, type McpSubscription, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { connectPinned, PINNED_CLIENT_OPTIONS } from "./protocolNegotiation.js";
 
-// Default URI for the bundled reference server (test://review/status)
-const REVIEW_STATUS_URI = "test://review/status";
-
-export interface SubscribeProbeOptions {
+export interface ResourceSubscriptionOptions {
   url: string;
-  uri?: string;
+  uri: string;
   timeoutMs?: number;
   clientName?: string;
   clientVersion?: string;
@@ -23,7 +20,7 @@ export interface SubscribeProbeOptions {
   skipResourceListCheck?: boolean;
 }
 
-export interface SubscribeProbeResult {
+export interface ResourceSubscriptionResult {
   capabilities: unknown;
   resourceFound: boolean;
   initialText: string;
@@ -253,12 +250,14 @@ function classifyWaitFailure(error: unknown): string {
   return "NOTIFICATION_TIMEOUT";
 }
 
-export async function runSubscribeProbe(options: SubscribeProbeOptions): Promise<SubscribeProbeResult> {
-  const uri = options.uri ?? REVIEW_STATUS_URI;
+export async function runResourceSubscription(
+  options: ResourceSubscriptionOptions,
+): Promise<ResourceSubscriptionResult> {
+  const uri = options.uri;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const client = new Client(
     {
-      name: options.clientName ?? "mcp-resource-subscribe-probe-client",
+      name: options.clientName ?? "resource-bridge-cli",
       // 実バージョンは呼び出し元（cli.ts が package.json から解決）が渡す。
       // 未指定のライブラリ利用では、古い実バージョンを騙るよりプレースホルダを名乗る。
       version: options.clientVersion ?? "0.0.0",

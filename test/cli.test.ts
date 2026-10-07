@@ -20,7 +20,7 @@ interface ExecResult {
   exitCode: number;
 }
 
-async function runCli(args: string[]): Promise<ExecResult> {
+async function runCli(args: string[], env: Record<string, string | undefined> = {}): Promise<ExecResult> {
   try {
     const { stdout, stderr } = await execFileAsync("node", ["--import", "tsx/esm", CLI_SRC, ...args], {
       encoding: "utf8",
@@ -30,6 +30,10 @@ async function runCli(args: string[]): Promise<ExecResult> {
         // the developer's real login cache.
         MCP_PROBE_TOKEN_STORE_PATH: join(tmpdir(), "mrs-cli-test-absent", "tokens.db"),
         MCP_PROBE_AUTH_TOKEN: undefined,
+        MCP_PROBE_TIMEOUT_MS: undefined,
+        MCP_PROBE_URL: undefined,
+        MCP_PROBE_URI: undefined,
+        ...env,
       },
     });
     return { stdout, stderr, exitCode: 0 };
@@ -77,6 +81,46 @@ async function getClosedPortUrl(): Promise<string> {
 }
 
 describe("--json CLI process output", () => {
+  it.each([false, true])("URI未指定は通信前に失敗する（json=%s）", async (jsonMode) => {
+    const url = await getClosedPortUrl();
+    const result = await runCli(["--url", url, ...(jsonMode ? ["--json"] : [])]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("--uri または MCP_PROBE_URI");
+    if (jsonMode) {
+      const json = JSON.parse(result.stdout) as JsonOutput;
+      expect(json.errorCode).toBe("RESOURCE_URI_REQUIRED");
+      expect(json.serverUrl).toBe(url);
+      expect(json.resourceUri).toBe("");
+      expect(json.listenAcknowledged).toBe(false);
+    } else {
+      expect(result.stdout).toContain("error-code RESOURCE_URI_REQUIRED");
+    }
+  });
+
+  it("MCP_PROBE_URIを指定した既存の呼び出しを維持する", async () => {
+    const { url, close } = await startTestServer();
+    try {
+      const result = await runCli(["--url", url, "--json", "--timeout-ms", "3000"], {
+        MCP_PROBE_URI: "test://review/status",
+      });
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        resourceUri: "test://review/status",
+        listenAcknowledged: true,
+        errorCode: null,
+      });
+    } finally {
+      await close();
+    }
+  }, 10_000);
+
+  it.each(["--version", "--help"])("%sは新名称を表示し、URIを要求しない", async (option) => {
+    const result = await runCli([option]);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toMatch(/^resource-bridge-cli v\d+\.\d+\.\d+/);
+    expect(result.stdout).not.toContain("mcp-resource-subscriber");
+  });
+
   it("SERVER_URL_UNKNOWN: stdout is valid JSON with errorCode and resourceUri preserved", async () => {
     const result = await runCli(["--uri", "queue://review/queue", "--json"]);
 
@@ -99,7 +143,7 @@ describe("--json CLI process output", () => {
   it("success: stdout is a single valid JSON object, exit code 0", async () => {
     const { url, close } = await startTestServer();
     try {
-      const result = await runCli(["--url", url, "--json", "--timeout-ms", "3000"]);
+      const result = await runCli(["--uri", "test://review/status", "--url", url, "--json", "--timeout-ms", "3000"]);
 
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout) as JsonOutput;
@@ -116,7 +160,7 @@ describe("--json CLI process output", () => {
   it("NOTIFICATION_TIMEOUT: exit code 1, errorCode in JSON, serverUrl and resourceUri preserved", async () => {
     const { url, close } = await startTestServer(9999);
     try {
-      const result = await runCli(["--url", url, "--uri", "test://review/status", "--json", "--timeout-ms", "300"]);
+      const result = await runCli(["--uri", "test://review/status", "--url", url, "--json", "--timeout-ms", "300"]);
 
       expect(result.exitCode).toBe(1);
       const json = JSON.parse(result.stdout) as JsonOutput;
@@ -131,7 +175,17 @@ describe("--json CLI process output", () => {
   it("--auth-token warning goes to stderr only, stdout is pure JSON", async () => {
     const { url, close } = await startTestServer();
     try {
-      const result = await runCli(["--url", url, "--auth-token", "tok", "--json", "--timeout-ms", "3000"]);
+      const result = await runCli([
+        "--uri",
+        "test://review/status",
+        "--url",
+        url,
+        "--auth-token",
+        "tok",
+        "--json",
+        "--timeout-ms",
+        "3000",
+      ]);
 
       expect(result.stderr).toContain("--auth-token value is visible");
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -145,7 +199,7 @@ describe("--json CLI process output", () => {
   it("stdout contains exactly one JSON object (no extra lines before/after)", async () => {
     const { url, close } = await startTestServer();
     try {
-      const result = await runCli(["--url", url, "--json", "--timeout-ms", "3000"]);
+      const result = await runCli(["--uri", "test://review/status", "--url", url, "--json", "--timeout-ms", "3000"]);
 
       const lines = result.stdout
         .trimEnd()
@@ -174,7 +228,7 @@ describe("--json CLI process output", () => {
   it("malformed --timeout-ms with known --url: serverUrl preserved in JSON", async () => {
     const { url, close } = await startTestServer();
     try {
-      const result = await runCli(["--url", url, "--timeout-ms", "bad", "--json"]);
+      const result = await runCli(["--uri", "test://review/status", "--url", url, "--timeout-ms", "bad", "--json"]);
 
       expect(result.exitCode).toBe(1);
       const json = JSON.parse(result.stdout) as JsonOutput;
@@ -190,7 +244,7 @@ describe("--json CLI process output", () => {
 describe("subscribe-probe: network error classification (#120)", () => {
   it("unreachable server (connection refused) fails with CONNECTION_REFUSED and a recommendedNextAction", async () => {
     const url = await getClosedPortUrl();
-    const result = await runCli(["--url", url, "--json", "--timeout-ms", "2000"]);
+    const result = await runCli(["--uri", "test://review/status", "--url", url, "--json", "--timeout-ms", "2000"]);
 
     expect(result.exitCode).toBe(1);
     const json = JSON.parse(result.stdout) as JsonOutput;
@@ -202,6 +256,8 @@ describe("subscribe-probe: network error classification (#120)", () => {
     const result = await runCli([
       "--url",
       "http://this-host-does-not-exist.invalid/mcp",
+      "--uri",
+      "test://review/status",
       "--json",
       "--timeout-ms",
       "5000",

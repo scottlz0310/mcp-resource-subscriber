@@ -1,4 +1,4 @@
-import { extractRecommendedAction, type SubscribeProbeResult } from "./probeClient.js";
+import { extractRecommendedAction, type ResourceSubscriptionResult } from "./subscriptionClient.js";
 
 export interface JsonOutput {
   route: string;
@@ -15,7 +15,11 @@ export interface JsonOutput {
   recommendedNextAction: string | null;
 }
 
-export function buildJsonOutput(result: SubscribeProbeResult, serverUrl: string, resourceUri: string): JsonOutput {
+export function buildJsonOutput(
+  result: ResourceSubscriptionResult,
+  serverUrl: string,
+  resourceUri: string,
+): JsonOutput {
   return {
     route: result.route,
     serverUrl,

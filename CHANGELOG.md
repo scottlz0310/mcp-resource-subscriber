@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING**: 公開package/binを `resource-bridge-cli` へ変更。help/version、MCP client名、新規OAuth DCR client名と運用文書を整合させた。GitHub repo名、既存token cacheのパス・形式・client_id、`MCP_PROBE_*`、JSON/終了コードは維持する。旧名wrapperは追加しない
+- **BREAKING**: 購読URIを `--uri` または `MCP_PROBE_URI` で明示必須にし、テスト用URIの暗黙の既定値を廃止。未指定は通信前に `RESOURCE_URI_REQUIRED`（終了コード1）で失敗する。`call`・login/logout・help/versionはURIを要求しない
+- 運用購読moduleを `subscriptionClient.js`、関数/型を `runResourceSubscription` / `ResourceSubscriptionOptions` / `ResourceSubscriptionResult` へ改名し、関数の `uri` を必須にした。利用するプログラムは新module pathと明示URIへ移行する
+- build時に `dist` を作り直し、改名・削除前の古い生成ファイルがローカル配布tarballへ混入することを防ぐ
+
+### Removed
+
+- 公開binと重複する初期手動probe経路 `scripts/subscribe-client.ts` / `probe:subscribe`。現行CI/test・調査したSquirrel/Mcp-Dockerの実行経路には利用がない。必要なfixtureサーバー、非JSON出力、追加オプション、過去の検証資料は維持する。削除一覧・根拠・配布順・切り戻し条件は `docs/cli-migration.md` に記載
+
 ## [0.6.1] - 2026-08-26
 
 ### Added

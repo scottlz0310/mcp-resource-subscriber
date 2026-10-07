@@ -1,3 +1,5 @@
+> この文書は初期互換性検証の履歴です。旧名・旧protocol・旧レビュー手順を現行の運用指示として使用しないでください。現行CLIは [README](../README.md) と [移行手順](../docs/cli-migration.md) を参照してください。レビュー運用skillの管理元はMcp-Dockerです。
+
 # Verification Guide
 
 > **Historical (pre-`2026-07-28`)**: this document records the 2025-era compatibility spike.

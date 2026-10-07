@@ -10,11 +10,8 @@ import { runToolCall } from "./callClient.js";
 import { buildCallErrorJsonOutput, buildCallJsonOutput } from "./callJsonOutput.js";
 import { buildErrorJsonOutput, buildJsonOutput } from "./jsonOutput.js";
 import { classifyNetworkError } from "./networkErrorClassification.js";
-import { extractRecommendedAction, runSubscribeProbe } from "./probeClient.js";
 import { PROTOCOL_UNSUPPORTED_HINT, ProtocolNegotiationError } from "./protocolNegotiation.js";
-
-// Default URI for the bundled reference server
-const REVIEW_STATUS_URI = "test://review/status";
+import { extractRecommendedAction, runResourceSubscription } from "./subscriptionClient.js";
 
 const TOOL_REQUEST_REJECTED_HINT =
   "The server rejected the tools/call request before running the tool (unknown tool name or invalid arguments). Check --tool and --args.";
@@ -32,7 +29,7 @@ function readPkg(): { name: string; version: string } {
       // try next candidate
     }
   }
-  return { name: "mcp-resource-subscriber", version: "0.0.0" };
+  return { name: "resource-bridge-cli", version: "0.0.0" };
 }
 const pkg = readPkg();
 
@@ -69,78 +66,46 @@ const args = process.argv.slice(2);
 
 if (args.includes("--help") || args.includes("-h")) {
   console.log(`${pkg.name} v${pkg.version}`);
-  console.log("");
-  console.log("Usage:");
-  console.log(
-    "  mcp-resource-subscriber --url <server-url> [--uri <resource-uri>] [--auth-token <tok>] [--skip-resource-list-check] [--timeout-ms <ms>] [--json]",
-  );
-  console.log(
-    "  mcp-resource-subscriber call --url <server-url> --tool <name> [--args <json>] [--auth-token <tok>] [--timeout-ms <ms>] [--json]",
-  );
-  console.log("");
-  console.log("Call mode (single tools/call invocation, then exit):");
-  console.log("  --tool <name>       MCP tool name to invoke (required)");
-  console.log("  --args <json>       JSON object of tool arguments (default: {})");
-  console.log("  Reuses --url, --auth-token, --login cache, --timeout-ms, --json from below.");
-  console.log("  Exit codes: 0 success, 1 tool error (isError), 2 auth error, 3 communication/usage error.");
-  console.log("");
-  console.log("Options:");
-  console.log("  --url <url>         MCP server Streamable HTTP endpoint");
-  console.log("                      Env: MCP_PROBE_URL");
-  console.log("  --uri <uri>         Resource URI to subscribe to");
-  console.log("                      Default: test://review/status (bundled test server only)");
-  console.log("                      Env: MCP_PROBE_URI");
-  console.log("  --auth-token <tok>  Bearer token for Authorization header");
-  console.log("                      Prefer MCP_PROBE_AUTH_TOKEN env var. Command-line flags");
-  console.log("                      are visible in process lists and may be stored in shell");
-  console.log("                      history. Env: MCP_PROBE_AUTH_TOKEN (recommended)");
-  console.log("  --login             Interactive device-flow login (RFC 8628) against the");
-  console.log("                      gateway serving --url. Prints a verification URI to");
-  console.log("                      approve in a browser, then caches the issued tokens so");
-  console.log("                      later runs authenticate and refresh automatically.");
-  console.log("                      Explicit --auth-token / MCP_PROBE_AUTH_TOKEN always");
-  console.log("                      override the cache. Cache: MCP_PROBE_TOKEN_STORE_PATH");
-  console.log("  --logout             Remove the cached token set for the gateway serving");
-  console.log("                      --url. Use after a gateway rebuild or DCR store reset");
-  console.log("                      so the next --login registers a fresh client.");
-  console.log("  --skip-resource-list-check");
-  console.log("                      Skip resources/list and assume the URI exists.");
-  console.log("                      Use for servers with dynamic resources not in list.");
-  console.log("                      Env: MCP_PROBE_SKIP_LIST_CHECK=true");
-  console.log("  --timeout-ms <ms>   Notification wait timeout in ms (default: 15000)");
-  console.log("                      Env: MCP_PROBE_TIMEOUT_MS");
-  console.log("  --json              Emit a single JSON object to stdout instead of line-based output.");
-  console.log("                      Diagnostic messages are written to stderr only.");
-  console.log("  --version, -v       Print version and exit");
-  console.log("  --help, -h          Print this help and exit");
-  console.log("");
-  console.log("Examples:");
-  console.log("  # Against the bundled test server (must be running on :8089):");
-  console.log("  mcp-resource-subscriber --url http://127.0.0.1:8089/mcp");
-  console.log("");
-  console.log("  # Against copilot-review-mcp:");
-  console.log("  mcp-resource-subscriber --url http://127.0.0.1:8080/mcp/copilot-review \\");
-  console.log("    --uri copilot-review://watch/<watch_id> \\");
-  console.log("    --timeout-ms 900000");
-  console.log("");
-  console.log("  # JSON output mode (for agent workflow integration):");
-  console.log("  mcp-resource-subscriber --url http://localhost:3000/mcp \\");
-  console.log("    --uri queue://review/re-review-requests \\");
-  console.log("    --timeout-ms 900000 \\");
-  console.log("    --json");
-  console.log("");
-  console.log("  # One-time interactive login against an mcp-gateway:");
-  console.log("  mcp-resource-subscriber --login --url http://127.0.0.1:8080/mcp/subscribe-probe");
-  console.log("");
-  console.log("  # Call an MCP tool once and exit (uses the same --login token cache):");
-  console.log("  mcp-resource-subscriber call \\");
-  console.log("    --url https://gateway.example/mcp/thread-owl \\");
-  console.log("    --tool enqueue_review \\");
-  console.log('    --args \'{"owner":"scottlz0310","repo":"example","prNumber":123}\' \\');
-  console.log("    --json");
-  console.log("");
-  console.log("  # Remove the cached token set for a gateway (e.g. after it was rebuilt):");
-  console.log("  mcp-resource-subscriber --logout --url http://127.0.0.1:8080/mcp/subscribe-probe");
+  console.log(`
+MCP resource の購読・結果配送と単発 tool 呼び出しを行う CLI クライアントです。
+シェルから実行し、stdout の結果を同じセッションで受け取ってください。
+
+使い方:
+  resource-bridge-cli --url <server-url> --uri <resource-uri> [--timeout-ms <ms>] [--json]
+  resource-bridge-cli call --url <server-url> --tool <name> [--args <json>] [--json]
+  resource-bridge-cli --login --url <gateway-mcp-url>
+  resource-bridge-cli --logout --url <gateway-mcp-url>
+
+共通オプション:
+  --url <url>         MCP Streamable HTTP endpoint。環境変数: MCP_PROBE_URL
+  --auth-token <tok>  Bearer token。プロセス一覧への露出を避けるため、
+                     環境変数 MCP_PROBE_AUTH_TOKEN を推奨します。
+  --timeout-ms <ms>  タイムアウト。既定: 15000。環境変数: MCP_PROBE_TIMEOUT_MS
+  --json             stdout に単一 JSON を出力します。診断は stderr に出力します。
+  --version, -v      バージョンを表示します。
+  --help, -h         この説明を表示します。
+
+購読オプション:
+  --uri <uri>        必須。環境変数 MCP_PROBE_URI でも指定できます。既定URIはありません。
+  --skip-resource-list-check
+                     resources/list に載らない動的URIで一覧確認を省略します。
+                     環境変数: MCP_PROBE_SKIP_LIST_CHECK=true
+
+call オプション:
+  --tool <name>      必須。呼び出す MCP tool 名。
+  --args <json>      tool 引数の JSON object。既定: {}
+  終了コード: 成功 0 / tool エラー 1 / 認証エラー 2 / 通信・引数エラー 3
+
+認証:
+  --login            device flow でログインし、token をキャッシュします。
+  --logout           指定URLの origin に対応するキャッシュを削除します。
+  明示tokenはキャッシュより優先します。保存先と MCP_PROBE_* は旧版と共通です。
+  保存先の上書き: MCP_PROBE_TOKEN_STORE_PATH
+
+例:
+  resource-bridge-cli --url https://gateway.example/mcp/thread-owl --uri review://status/owner/repo/123 --timeout-ms 1200000 --json
+  resource-bridge-cli call --url https://gateway.example/mcp/thread-owl --tool enqueue_review --args '{"owner":"owner","repo":"repo","prNumber":123,"reason":"opened"}' --json
+`);
   process.exit(0);
 }
 
@@ -223,7 +188,7 @@ if (args.includes("--logout")) {
 
 function parseOptions() {
   const url = readOption("url") ?? process.env.MCP_PROBE_URL ?? null;
-  const uri = readOption("uri") ?? process.env.MCP_PROBE_URI ?? REVIEW_STATUS_URI;
+  const uri = readOption("uri") ?? process.env.MCP_PROBE_URI ?? "";
   const timeoutRaw = readOption("timeout-ms") ?? process.env.MCP_PROBE_TIMEOUT_MS ?? "15000";
   const timeoutMs = Number(timeoutRaw);
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
@@ -272,7 +237,7 @@ async function resolveBearerToken(
   }
 }
 
-function printResult(result: Awaited<ReturnType<typeof runSubscribeProbe>>, url: string, uri: string): void {
+function printResult(result: Awaited<ReturnType<typeof runResourceSubscription>>, url: string, uri: string): void {
   console.log(`capabilities ${JSON.stringify(result.capabilities)}`);
   console.log(`resource-found ${result.resourceFound}`);
   console.log(`resource-uri ${uri}`);
@@ -435,7 +400,7 @@ async function runCallCommand(): Promise<void> {
     if (error instanceof AuthLoginRequiredError) {
       errorCode = "AUTH_LOGIN_REQUIRED";
       exitCode = 2;
-      console.error(`hint: run \`mcp-resource-subscriber --login --url ${url}\` to re-authenticate`);
+      console.error(`hint: run \`resource-bridge-cli --login --url ${url}\` to re-authenticate`);
     } else if (error instanceof AuthTimeoutError) {
       errorCode = "AUTH_TIMEOUT";
       exitCode = 2;
@@ -483,7 +448,7 @@ if (args[0] === "call") {
   // Use peekOption (no-throw) so malformed args don't produce a bare stack trace before the try.
   const jsonMode = args.includes("--json");
   let capturedUrl: string | null = peekOption("url") ?? process.env.MCP_PROBE_URL ?? null;
-  let capturedUri: string = peekOption("uri") ?? process.env.MCP_PROBE_URI ?? REVIEW_STATUS_URI;
+  let capturedUri: string = peekOption("uri") ?? process.env.MCP_PROBE_URI ?? "";
 
   try {
     const options = parseOptions();
@@ -498,12 +463,16 @@ if (args[0] === "call") {
         console.log("phase-summary route=failed url=unknown error-code=SERVER_URL_UNKNOWN");
       }
       process.exitCode = 1;
-    } else {
-      if (options.uri === REVIEW_STATUS_URI && !readOption("uri") && !process.env.MCP_PROBE_URI) {
-        console.warn(
-          "warning: using default URI test://review/status which is only meaningful against the bundled test server",
-        );
+    } else if (!options.uri) {
+      console.error("購読には --uri または MCP_PROBE_URI が必要です。");
+      if (options.json) {
+        process.stdout.write(`${JSON.stringify(buildErrorJsonOutput("RESOURCE_URI_REQUIRED", options.url, ""))}\n`);
+      } else {
+        console.log("error-code RESOURCE_URI_REQUIRED");
+        console.log(`phase-summary route=failed url=${options.url} uri= error-code=RESOURCE_URI_REQUIRED`);
       }
+      process.exitCode = 1;
+    } else {
       if (options.authTokenFromFlag) {
         console.warn(
           "warning: --auth-token value is visible in process lists and may be stored in shell history. Prefer MCP_PROBE_AUTH_TOKEN env var.",
@@ -512,7 +481,7 @@ if (args[0] === "call") {
       const authStart = Date.now();
       const bearerToken = await resolveBearerToken(options.url, options.authToken, options.timeoutMs);
       const remainingTimeoutMs = Math.max(0, options.timeoutMs - (Date.now() - authStart));
-      const result = await runSubscribeProbe({
+      const result = await runResourceSubscription({
         url: options.url,
         uri: options.uri,
         timeoutMs: remainingTimeoutMs,
@@ -531,13 +500,13 @@ if (args[0] === "call") {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(`subscribe-probe failed: ${message}`);
+    console.error(`購読に失敗しました: ${message}`);
     let errorCode = "INTERNAL_ERROR";
     let recommendedNextAction: string | null = null;
     if (error instanceof AuthLoginRequiredError) {
       errorCode = "AUTH_LOGIN_REQUIRED";
       console.error(
-        `hint: run \`mcp-resource-subscriber --login --url ${capturedUrl ?? "<gateway-url>"}\` to re-authenticate`,
+        `hint: run \`resource-bridge-cli --login --url ${capturedUrl ?? "<gateway-url>"}\` to re-authenticate`,
       );
     } else if (error instanceof AuthTimeoutError) {
       // The gateway accepted the connection but never responded within the
