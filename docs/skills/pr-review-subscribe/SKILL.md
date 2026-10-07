@@ -3,6 +3,8 @@ name: pr-review-subscribe
 description: PR review cycle with provider-agnostic Unified Review Thread Handling. Supports multiple acquisition providers — copilot-review (MCP watch/subscribe), codex (@codex mention), external/human (user-signaled), or existing threads. Thread collection, classification, fixing, reply, and resolve are unified across all providers. Re-review uses structured loops for copilot-review and message-based requests for others. Use immediately after creating a PR, requesting any review, after a reviewer posts threads, or when the user asks to process PR review comments. Never merge autonomously.
 ---
 
+> この文書は初期互換性検証の履歴です。旧名・旧protocol・旧レビュー手順を現行の運用指示として使用しないでください。現行CLIは [README](../../../README.md) と [移行手順](../../../docs/cli-migration.md) を参照してください。レビュー運用skillの管理元はMcp-Dockerです。
+
 # pr-review-subscribe
 
 PR review cycle with **provider abstraction**: review acquisition and thread processing are separate concerns.
@@ -187,7 +189,7 @@ If native `{RSRC}:resources/subscribe` is unavailable or fails, go to **1S-B2** 
 
 Look for a project-provided MCP subscription wrapper by inspecting the repository:
 
-1. Check `package.json` scripts for entries like `probe:subscribe`, `subscribe-client`, or similar.
+1. 現行CLIの実行方法はREADMEを確認する。重複する手動probeスクリプトは廃止済み。
 2. Check `scripts/` or `bin/` directories for a Node.js or other runtime MCP client.
 3. Check `AGENTS.md`, `README.md`, or `docs/` for documented SDK wrapper commands.
 

@@ -1,14 +1,13 @@
 {
-  "name": "mcp-resource-subscriber",
+  "name": "resource-bridge-cli",
   "version": "0.6.1",
-  "description": "CLI probe for MCP resource subscriptions (protocol revision 2026-07-28) — open a subscriptions/listen stream, receive live update notifications, and re-read updated content.",
+  "description": "MCP resource の購読・結果配送と単発 tool 呼び出しを行う CLI クライアント（protocol revision 2026-07-28）",
   "keywords": [
     "mcp",
     "model-context-protocol",
     "subscriptions-listen",
     "mcp-client",
     "cli",
-    "probe",
     "notifications"
   ],
   "homepage": "https://github.com/scottlz0310/mcp-resource-subscriber",
@@ -16,7 +15,7 @@
   "packageManager": "pnpm@12.6.0",
   "license": "MIT",
   "bin": {
-    "mcp-resource-subscriber": "dist/src/client/cli.js"
+    "resource-bridge-cli": "dist/src/client/cli.js"
   },
   "files": [
     "dist/src/client/",
@@ -32,10 +31,9 @@
     "url": "https://github.com/scottlz0310/mcp-resource-subscriber.git"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node --eval \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json",
     "start": "node dist/src/server/index.js",
     "dev": "tsx src/server/index.ts",
-    "probe:subscribe": "tsx scripts/subscribe-client.ts",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit",

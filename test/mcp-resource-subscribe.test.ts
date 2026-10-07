@@ -6,12 +6,12 @@ import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, type McpHttpHandler, McpServer } from "@modelcontextprotocol/server";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildJsonOutput, type JsonOutput } from "../src/client/jsonOutput.js";
-import { extractRecommendedAction, runSubscribeProbe } from "../src/client/probeClient.js";
 import {
   PINNED_CLIENT_OPTIONS,
   PINNED_PROTOCOL_VERSION,
   ProtocolNegotiationError,
 } from "../src/client/protocolNegotiation.js";
+import { extractRecommendedAction, runResourceSubscription } from "../src/client/subscriptionClient.js";
 import { configFromEnv, type TestConfig } from "../src/server/config.js";
 import { createMcpHttpApp } from "../src/server/httpServer.js";
 import {
@@ -287,8 +287,9 @@ describe("MCP resource subscription probe", () => {
     const logs: string[] = [];
     const url = await startServer(logs);
 
-    const result = await runSubscribeProbe({
+    const result = await runResourceSubscription({
       url: url.toString(),
+      uri: REVIEW_STATUS_URI,
       timeoutMs: 2_000,
     });
 
@@ -322,7 +323,7 @@ describe("MCP resource subscription probe", () => {
     const url = await startServer(logs);
 
     for (const attempt of [1, 2, 3]) {
-      const result = await runSubscribeProbe({ url: url.toString(), timeoutMs: 2_000 });
+      const result = await runResourceSubscription({ url: url.toString(), uri: REVIEW_STATUS_URI, timeoutMs: 2_000 });
 
       expect(result.errorCode, `probe ${attempt}`).toBeNull();
       expect(result.route, `probe ${attempt}`).toBe("subscription");
@@ -341,7 +342,7 @@ describe("MCP resource subscription probe", () => {
       [20, 40],
     );
 
-    const result = await runSubscribeProbe({
+    const result = await runResourceSubscription({
       url,
       uri: REVIEW_STATUS_URI,
       timeoutMs: 1_000,
@@ -382,7 +383,7 @@ describe("MCP resource subscription probe", () => {
       },
     });
 
-    const result = await runSubscribeProbe({
+    const result = await runResourceSubscription({
       url,
       uri: REVIEW_STATUS_URI,
       timeoutMs: 1_000,
@@ -402,8 +403,9 @@ describe("MCP resource subscription probe", () => {
     const logs: string[] = [];
     const url = await startServer(logs);
 
-    const result = await runSubscribeProbe({
+    const result = await runResourceSubscription({
       url: url.toString(),
+      uri: REVIEW_STATUS_URI,
       timeoutMs: 2_000,
       skipResourceListCheck: true,
     });
@@ -420,7 +422,7 @@ describe("MCP resource subscription probe", () => {
     const logs: string[] = [];
     const url = await startServer(logs);
 
-    const result = await runSubscribeProbe({
+    const result = await runResourceSubscription({
       url: url.toString(),
       uri: "test://does-not-exist",
       timeoutMs: 2_000,
@@ -438,7 +440,7 @@ describe("MCP resource subscription probe", () => {
     // Use a large updateDelaySeconds so the notification never arrives within the probe timeout
     const url = await startServer(logs, { ...TEST_CONFIG, updateDelaySeconds: 100 });
 
-    const result = await runSubscribeProbe({
+    const result = await runResourceSubscription({
       url: url.toString(),
       uri: REVIEW_STATUS_URI,
       timeoutMs: 200,
@@ -454,7 +456,7 @@ describe("MCP resource subscription probe", () => {
   it("returns SUBSCRIPTION_NOT_HONORED when the acknowledgement drops the requested URI", async () => {
     const url = await startActionSequenceServer(["initial-text"], [], { subscribeCapability: false });
 
-    const result = await runSubscribeProbe({ url, uri: REVIEW_STATUS_URI, timeoutMs: 2_000 });
+    const result = await runResourceSubscription({ url, uri: REVIEW_STATUS_URI, timeoutMs: 2_000 });
 
     expect(result.resourceFound).toBe(true);
     expect(result.listenAcknowledged).toBe(true);
@@ -466,7 +468,7 @@ describe("MCP resource subscription probe", () => {
   it("returns SUBSCRIPTION_FAILED errorCode when the server rejects subscriptions/listen", async () => {
     const url = await startActionSequenceServer(["initial-text"], [], { maxSubscriptions: 0 });
 
-    const result = await runSubscribeProbe({ url, uri: REVIEW_STATUS_URI, timeoutMs: 2_000 });
+    const result = await runResourceSubscription({ url, uri: REVIEW_STATUS_URI, timeoutMs: 2_000 });
 
     expect(result.resourceFound).toBe(true);
     expect(result.errorCode).toBe("SUBSCRIPTION_FAILED");
@@ -481,7 +483,7 @@ describe("MCP resource subscription probe", () => {
     const server = createServer(app);
     const url = await listenOn(server);
 
-    const probe = runSubscribeProbe({ url, uri: REVIEW_STATUS_URI, timeoutMs: 10_000 });
+    const probe = runResourceSubscription({ url, uri: REVIEW_STATUS_URI, timeoutMs: 10_000 });
     // 通知待ちに入ってから接続ごと落とす。listen の応答なしに stream が切れるため、
     // client からは異常切断として観測されなければならない。
     await sleep(300);
@@ -511,7 +513,7 @@ describe("MCP resource subscription probe", () => {
       });
       const url = await listenOn(server);
 
-      await expect(runSubscribeProbe({ url, uri: REVIEW_STATUS_URI, timeoutMs: 2_000 })).rejects.toBeInstanceOf(
+      await expect(runResourceSubscription({ url, uri: REVIEW_STATUS_URI, timeoutMs: 2_000 })).rejects.toBeInstanceOf(
         ProtocolNegotiationError,
       );
     });
@@ -550,7 +552,7 @@ describe("MCP resource subscription probe", () => {
       const logs: string[] = [];
       const url = await startServer(logs);
 
-      const result = await runSubscribeProbe({ url: url.toString(), timeoutMs: 2_000 });
+      const result = await runResourceSubscription({ url: url.toString(), uri: REVIEW_STATUS_URI, timeoutMs: 2_000 });
       const output = buildJsonOutput(result, url.toString(), REVIEW_STATUS_URI);
       const json = JSON.parse(JSON.stringify(output)) as JsonOutput;
 
@@ -570,7 +572,7 @@ describe("MCP resource subscription probe", () => {
     it("emits valid JSON shape on timeout (failure path)", async () => {
       const url = await startActionSequenceServer(["initial-text"], []);
 
-      const result = await runSubscribeProbe({ url, uri: REVIEW_STATUS_URI, timeoutMs: 100 });
+      const result = await runResourceSubscription({ url, uri: REVIEW_STATUS_URI, timeoutMs: 100 });
       const output = buildJsonOutput(result, url, REVIEW_STATUS_URI);
       const json = JSON.parse(JSON.stringify(output)) as JsonOutput;
 
@@ -588,7 +590,7 @@ describe("MCP resource subscription probe", () => {
       const logs: string[] = [];
       const url = await startServer(logs);
 
-      const result = await runSubscribeProbe({
+      const result = await runResourceSubscription({
         url: url.toString(),
         uri: "test://does-not-exist",
         timeoutMs: 1_000,
@@ -610,7 +612,7 @@ describe("MCP resource subscription probe", () => {
         [20],
       );
 
-      const result = await runSubscribeProbe({ url, uri: REVIEW_STATUS_URI, timeoutMs: 1_000 });
+      const result = await runResourceSubscription({ url, uri: REVIEW_STATUS_URI, timeoutMs: 1_000 });
       const output = buildJsonOutput(result, url, REVIEW_STATUS_URI);
       const json = JSON.parse(JSON.stringify(output)) as JsonOutput;
 
@@ -621,7 +623,7 @@ describe("MCP resource subscription probe", () => {
       const logs: string[] = [];
       const url = await startServer(logs);
 
-      const result = await runSubscribeProbe({ url: url.toString(), timeoutMs: 2_000 });
+      const result = await runResourceSubscription({ url: url.toString(), uri: REVIEW_STATUS_URI, timeoutMs: 2_000 });
       const output = buildJsonOutput(result, url.toString(), REVIEW_STATUS_URI);
       const serialized = JSON.stringify(output);
 
@@ -669,7 +671,7 @@ describe("MCP resource subscription probe", () => {
       return server;
     });
 
-    const result = await runSubscribeProbe({ url, uri: REVIEW_STATUS_URI, timeoutMs: 500 });
+    const result = await runResourceSubscription({ url, uri: REVIEW_STATUS_URI, timeoutMs: 500 });
 
     expect(result.resourceFound).toBe(true);
     expect(result.listenAcknowledged).toBe(true);

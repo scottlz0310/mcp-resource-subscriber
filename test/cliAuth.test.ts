@@ -27,6 +27,7 @@ async function runCli(args: string[], env: Record<string, string | undefined>): 
     ...process.env,
     // Isolate from any auth configuration present in the developer's shell.
     MCP_PROBE_AUTH_TOKEN: undefined,
+    MCP_PROBE_TIMEOUT_MS: undefined,
     MCP_PROBE_URL: undefined,
     MCP_PROBE_URI: undefined,
     MCP_PROBE_TOKEN_STORE_PATH: undefined,
@@ -201,9 +202,12 @@ describe("CLI auth integration", () => {
     try {
       const origin = new URL(mcp.url).origin;
       seedToken(origin);
-      const result = await runCli(["--url", mcp.url, "--json", "--timeout-ms", "3000"], {
-        MCP_PROBE_TOKEN_STORE_PATH: dbPath,
-      });
+      const result = await runCli(
+        ["--uri", "test://review/status", "--url", mcp.url, "--json", "--timeout-ms", "3000"],
+        {
+          MCP_PROBE_TOKEN_STORE_PATH: dbPath,
+        },
+      );
 
       expect(result.exitCode).toBe(0);
       expect(result.stderr).toContain("auth token source: cache");
@@ -219,10 +223,13 @@ describe("CLI auth integration", () => {
     try {
       const origin = new URL(mcp.url).origin;
       seedToken(origin);
-      const result = await runCli(["--url", mcp.url, "--json", "--timeout-ms", "3000"], {
-        MCP_PROBE_TOKEN_STORE_PATH: dbPath,
-        MCP_PROBE_AUTH_TOKEN: "explicit-token",
-      });
+      const result = await runCli(
+        ["--uri", "test://review/status", "--url", mcp.url, "--json", "--timeout-ms", "3000"],
+        {
+          MCP_PROBE_TOKEN_STORE_PATH: dbPath,
+          MCP_PROBE_AUTH_TOKEN: "explicit-token",
+        },
+      );
 
       expect(result.exitCode).toBe(0);
       expect(result.stderr).not.toContain("auth token source");
@@ -235,9 +242,12 @@ describe("CLI auth integration", () => {
   it("connects without Authorization when nothing is cached (backward compatible)", async () => {
     const mcp = await startCapturingMcpServer();
     try {
-      const result = await runCli(["--url", mcp.url, "--json", "--timeout-ms", "3000"], {
-        MCP_PROBE_TOKEN_STORE_PATH: dbPath,
-      });
+      const result = await runCli(
+        ["--uri", "test://review/status", "--url", mcp.url, "--json", "--timeout-ms", "3000"],
+        {
+          MCP_PROBE_TOKEN_STORE_PATH: dbPath,
+        },
+      );
 
       expect(result.exitCode).toBe(0);
       expect(mcp.captured.every((h) => h === undefined)).toBe(true);
@@ -252,9 +262,12 @@ describe("CLI auth integration", () => {
   it("AUTH_LOGIN_REQUIRED (JSON mode) when the cached token is expired and refresh is rejected", async () => {
     authServer = await startMockAuthServer();
     seedToken(authServer.origin, { expiresAt: Date.now() - 1000, refreshToken: "rt-dead" });
-    const result = await runCli(["--url", `${authServer.origin}/mcp`, "--json", "--timeout-ms", "3000"], {
-      MCP_PROBE_TOKEN_STORE_PATH: dbPath,
-    });
+    const result = await runCli(
+      ["--uri", "test://review/status", "--url", `${authServer.origin}/mcp`, "--json", "--timeout-ms", "3000"],
+      {
+        MCP_PROBE_TOKEN_STORE_PATH: dbPath,
+      },
+    );
 
     expect(result.exitCode).toBe(1);
     const json = JSON.parse(result.stdout) as JsonOutput;
@@ -266,13 +279,13 @@ describe("CLI auth integration", () => {
     authServer = await startMockAuthServer();
     seedToken(authServer.origin, { expiresAt: Date.now() - 1000, refreshToken: "rt-dead" });
     const url = `${authServer.origin}/mcp`;
-    const result = await runCli(["--url", url, "--timeout-ms", "3000"], {
+    const result = await runCli(["--uri", "test://review/status", "--url", url, "--timeout-ms", "3000"], {
       MCP_PROBE_TOKEN_STORE_PATH: dbPath,
     });
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toContain("error-code AUTH_LOGIN_REQUIRED");
-    expect(result.stderr).toContain("run `mcp-resource-subscriber --login");
+    expect(result.stderr).toContain("run `resource-bridge-cli --login");
     // The failure phase-summary must report the actual url/uri, not "unknown",
     // so automation can correlate the failure with the run that produced it.
     expect(result.stdout).toContain(
@@ -290,9 +303,12 @@ describe("CLI auth integration", () => {
     const origin = `http://127.0.0.1:${port}`;
     try {
       seedToken(origin, { expiresAt: Date.now() - 1000 });
-      const result = await runCli(["--url", `${origin}/mcp`, "--json", "--timeout-ms", "500"], {
-        MCP_PROBE_TOKEN_STORE_PATH: dbPath,
-      });
+      const result = await runCli(
+        ["--uri", "test://review/status", "--url", `${origin}/mcp`, "--json", "--timeout-ms", "500"],
+        {
+          MCP_PROBE_TOKEN_STORE_PATH: dbPath,
+        },
+      );
 
       expect(result.exitCode).toBe(1);
       const json = JSON.parse(result.stdout) as JsonOutput;

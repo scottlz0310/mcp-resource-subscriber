@@ -31,7 +31,7 @@ export async function runToolCall(options: ToolCallOptions): Promise<ToolCallRes
   const deadline = Date.now() + timeoutMs;
   const client = new Client(
     {
-      name: options.clientName ?? "mcp-resource-subscribe-call-client",
+      name: options.clientName ?? "resource-bridge-cli",
       // 実バージョンは呼び出し元（cli.ts が package.json から解決）が渡す。
       // 未指定のライブラリ利用では、古い実バージョンを騙るよりプレースホルダを名乗る。
       version: options.clientVersion ?? "0.0.0",

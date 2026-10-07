@@ -45,7 +45,7 @@ export class OAuthRequestError extends Error {
   }
 }
 
-const CLIENT_NAME = "mcp-resource-subscriber";
+const CLIENT_NAME = "resource-bridge-cli";
 
 async function readOAuthError(response: Response, context: string): Promise<OAuthRequestError> {
   let oauthError = "unknown_error";

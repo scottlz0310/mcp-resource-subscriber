@@ -33,6 +33,7 @@ async function runCli(args: string[], env: Record<string, string | undefined> = 
         // the developer's real login cache.
         MCP_PROBE_TOKEN_STORE_PATH: join(tmpdir(), "mrs-call-test-absent", "tokens.db"),
         MCP_PROBE_AUTH_TOKEN: undefined,
+        MCP_PROBE_TIMEOUT_MS: undefined,
         MCP_PROBE_URL: undefined,
         ...env,
       },

@@ -15,7 +15,7 @@
  *   Level 3 – full subscribe→notify→re-read flow (requires MCP_E2E_WATCH_ID)
  */
 import { describe, expect, it } from "vitest";
-import { runSubscribeProbe } from "../src/client/probeClient.js";
+import { runResourceSubscription } from "../src/client/subscriptionClient.js";
 
 const E2E_URL = process.env.MCP_E2E_URL;
 const E2E_TOKEN = process.env.MCP_E2E_TOKEN;
@@ -28,7 +28,7 @@ describe.skipIf(!E2E_URL)("E2E: external MCP server (copilot-review-mcp)", () =>
 
   it("Level 1: server is reachable and advertises resources.subscribe=true", async () => {
     // Use a nonexistent URI to trigger RESOURCE_NOT_FOUND — we only care about capabilities here
-    const result = await runSubscribeProbe({
+    const result = await runResourceSubscription({
       url,
       uri: "copilot-review://watch/__connectivity_check__",
       timeoutMs: 10_000,
@@ -42,7 +42,7 @@ describe.skipIf(!E2E_URL)("E2E: external MCP server (copilot-review-mcp)", () =>
   }, 15_000);
 
   it("Level 2: RESOURCE_NOT_FOUND returned gracefully for unknown URI", async () => {
-    const result = await runSubscribeProbe({
+    const result = await runResourceSubscription({
       url,
       uri: "copilot-review://watch/__does_not_exist__",
       timeoutMs: 10_000,
@@ -61,7 +61,7 @@ describe.skipIf(!E2E_URL)("E2E: external MCP server (copilot-review-mcp)", () =>
       // copilot-review-mcp server. They represent the expected happy-path
       // contract. If they fail, adjust after confirming actual server behavior.
       const uri = `copilot-review://watch/${E2E_WATCH_ID}`;
-      const result = await runSubscribeProbe({
+      const result = await runResourceSubscription({
         url,
         uri,
         timeoutMs: 900_000, // 15 minutes — Copilot review may take time
