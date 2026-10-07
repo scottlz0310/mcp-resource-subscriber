@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-07
+
 ### Changed
 
 - **BREAKING**: 公開package/binを `resource-bridge-cli` へ変更。help/version、MCP client名、新規OAuth DCR client名と運用文書を整合させた。GitHub repo名、既存token cacheのパス・形式・client_id、`MCP_PROBE_*`、JSON/終了コードは維持する。旧名wrapperは追加しない
@@ -248,7 +250,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `src/server/mcpServer.ts` contains a hardcoded version string (bundled test server, not part of the published npm package). This must be updated manually on each version bump. `src/client/probeClient.ts` / `src/client/callClient.ts` resolve their version dynamically from `package.json` as of v0.5.0 and no longer need manual updates.
 
-[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.4.0...v0.5.0
