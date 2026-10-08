@@ -1,10 +1,7 @@
 FROM node:26.10.0-alpine AS base
-ARG PNPM_VERSION=11.4.0
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME/bin:$PATH
-RUN touch /root/.shrc \
-  && wget -qO- https://get.pnpm.io/install.sh | env PNPM_VERSION=$PNPM_VERSION SHELL=/bin/sh ENV=/root/.shrc sh - \
-  && pnpm --version
+RUN npm install -g corepack@latest && corepack enable
 
 FROM base AS deps
 WORKDIR /app

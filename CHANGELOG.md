@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `Dockerfile`: ハードコードされた古い `ARG PNPM_VERSION=11.4.0` と `install.sh` を撤廃し、Corepack パターン（`npm install -g corepack@latest && corepack enable`）へ刷新。`package.json` の `packageManager` で宣言された pnpm バージョンを常に自動検知して使用するようにし、Renovate による pnpm 更新時のコンテナビルド失敗を解消
+
 ### Documentation
 
 - `docs/cli-migration.md`: v0.7.0公開後の呼び出し側（Mcp-Docker / Squirrel Notifier）の移行完了状況と、移行ガイドブックへの参照を追記
