@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- `docs/cli-migration.md`: v0.7.0公開後の呼び出し側（Mcp-Docker / Squirrel Notifier）の移行完了状況と、別環境向け移行ガイドへの参照を追記
+
 ## [0.7.0] - 2026-10-07
 
 ### Changed
