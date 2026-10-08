@@ -57,3 +57,13 @@
 新CLIの通信・認証・結果配送が失敗した場合は、利用先のコマンド設定・skillを旧配布物へ戻す。共通cacheを維持するため、切り戻しに伴うDB初期化は不要。旧packageの削除・廃止は全利用先の切替検証と利用者の許可後に行う。
 
 このrepoの実装マージは第一段階の一部である。新CLIの公開、利用先更新・再配布、実エージェントの結果受信を確認してから、利用者と第一段階の成功を判断する。内包化・MCPサーバー化・CLI廃止は必須の後続作業にしない。
+
+## 移行の完了状況と環境展開
+
+2026-10-07に `v0.7.0` の正式公開（npm latest / GitHub Release）が完了し、呼び出し側リポジトリの移行・再配布も実施された。
+
+1. **Mcp-Docker**: `v2.31.1` にて新CLIへの呼び出し整合および最新skill（`thread-owl-pr-reviewer` rev 22 / `review-raven-thread-owl-cycle` rev 29）を全エージェント（claude, copilot, codex, antigravity）へ再配布完了。
+2. **Squirrel Notifier**: `v0.19.0` にて新CLI認識・既定コマンド更新が完了。設定の `SubscriberCommandPath` を `%LOCALAPPDATA%\pnpm\bin\resource-bridge-cli.cmd` 等へ切り替え、子プロセスによるキュー購読（`queue://review/queue` および `queue://review/re-review-requests`）が正常稼働することを確認済み。
+3. **別環境への適用**: 手順・退避・整合確認は[移行ガイドブック](guidebook/resource-bridge-cli-migration.md)に整理され、Node `>=26.10.0` の確保と新CLI導入、設定退避、常駐起動確認の一連の手順が確立されている。
+4. **実運用評価**: 実PRでのレビューサイクル（独立reviewer起動、同一セッションでの新CLI結果受信、未解決スレッド取得）を順次実施し、配送の安定性を確認する。
+
