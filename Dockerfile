@@ -1,4 +1,4 @@
-FROM node:26.10.0-alpine AS base
+FROM node:26.11.1-alpine AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME/bin:$PATH
 RUN npm install -g corepack@latest && corepack enable
