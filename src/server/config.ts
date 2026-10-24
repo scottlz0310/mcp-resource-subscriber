@@ -7,6 +7,8 @@ export interface TestConfig {
   initialStatus: string;
   updatedStatus: string;
   sendListChanged: boolean;
+  /** resources/read の応答を遅らせる（read の timeout 予算の検証用）。未指定は遅延なし。 */
+  readDelayMs?: number;
   logLevel: LogLevel;
 }
 

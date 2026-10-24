@@ -65,3 +65,17 @@ export function evaluateUntil(condition: UntilCondition, document: unknown): boo
   const resolved = resolvePointer(document, condition.pointer);
   return resolved.found && isDeepStrictEqual(resolved.value, condition.expected);
 }
+
+/**
+ * snapshot 本文を JSON として解釈して終了条件を評価する。解析失敗は JSON の `null` と
+ * 区別し、必ず不一致にする（空 Pointer の `=null` が非 JSON 本文に一致しないようにする）。
+ */
+export function evaluateSnapshot(condition: UntilCondition, text: string): { json: unknown | null; matched: boolean } {
+  let json: unknown;
+  try {
+    json = JSON.parse(text) as unknown;
+  } catch {
+    return { json: null, matched: false };
+  }
+  return { json, matched: evaluateUntil(condition, json) };
+}

@@ -9,7 +9,7 @@ export interface TestServer {
   dropConnections: () => void;
 }
 
-export async function startTestServer(updateDelaySeconds = 0.05): Promise<TestServer> {
+export async function startTestServer(updateDelaySeconds = 0.05, readDelayMs?: number): Promise<TestServer> {
   const { app, close: closeHandler } = createMcpHttpApp(
     {
       port: 0,
@@ -18,6 +18,7 @@ export async function startTestServer(updateDelaySeconds = 0.05): Promise<TestSe
       initialStatus: "pending",
       updatedStatus: "reviewed",
       sendListChanged: false,
+      readDelayMs,
       logLevel: "silent",
     },
     () => {},

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 購読に opt-in の `--jsonl` / `--until <JSON Pointer>=<JSON値>` を追加（review-raven#144 R2、#225）。更新を ack / snapshot / end の1行1JSON（`schemaVersion: 1`）で都度flushして出力し、`--until` の条件が一致するまで終了しない。最初の途中更新で待機が終わらず、呼び出し元が同じセッションで途中報告できる。listen前に確定済みの結果はack後のreadで検出する。条件一致は終了コード0、timeout・切断・引数不正は `end` 行つきで1。`--until` 省略・`--json` との併用・`--jsonl` なしの `--until` は通信前に失敗する。既存の `--json` 単一出力・行形式・`call`・認証・終了コードは変更しない。PR/HEAD/Verdictの判断と待機API内製化・CLI廃止は含めない
 - テスト用fixtureに4段階で進む `test://review/progress` resourceを追加
+- 逐次出力の判定を厳密化: JSONとして解釈できない本文は空Pointerの `=null` を含め必ず不一致とし、`--timeout-ms` を接続・一覧確認・各readの全体予算として適用する（超過したreadは一致する値でも成功にしない）。テスト用fixtureに `readDelayMs`（read応答の遅延）を追加
 
 ### Fixed
 

@@ -1,4 +1,10 @@
-import { Client, type McpSubscription, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import {
+  Client,
+  type McpSubscription,
+  SdkError,
+  SdkErrorCode,
+  StreamableHTTPClientTransport,
+} from "@modelcontextprotocol/client";
 import { connectPinned, PINNED_CLIENT_OPTIONS } from "./protocolNegotiation.js";
 import {
   classifyWaitFailure,
@@ -8,7 +14,7 @@ import {
   SubscriptionClosedError,
   UNCACHED,
 } from "./subscriptionClient.js";
-import { evaluateUntil, type UntilCondition } from "./untilCondition.js";
+import { evaluateSnapshot, type UntilCondition } from "./untilCondition.js";
 
 export type StreamEvent =
   | { type: "ack"; resourceUri: string; honoredUris: string[] }
@@ -36,12 +42,10 @@ export interface ResourceStreamResult {
   matched: boolean;
 }
 
-function parseJson(text: string): unknown | null {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return null;
-  }
+const TIMEOUT_ERROR_CODE = "NOTIFICATION_TIMEOUT";
+
+function isRequestTimeout(error: unknown): boolean {
+  return error instanceof SdkError && error.code === SdkErrorCode.RequestTimeout;
 }
 
 /**
@@ -53,6 +57,9 @@ export async function runResourceStream(options: ResourceStreamOptions): Promise
   const { uri, until, onEvent } = options;
   const deadlineMs = Date.now() + (options.timeoutMs ?? 15_000);
   const remainingMs = (): number => Math.max(0, deadlineMs - Date.now());
+  // 接続・一覧・各 read に同じ残り時間予算を渡す。SDK が期限で打ち切るため、期限後に届いた
+  // 応答（一致する値を含む）が成功として受理されることはない。
+  const budgeted = () => ({ ...UNCACHED, timeout: remainingMs() });
   const client = new Client(
     {
       name: options.clientName ?? "resource-bridge-cli",
@@ -70,17 +77,29 @@ export async function runResourceStream(options: ResourceStreamOptions): Promise
   });
   const notAcknowledged = { listenAcknowledged: false, honoredUris: [] };
 
+  // 認証で予算を使い切った場合に timeout: 0 を SDK へ渡さない（0 の扱いに依存しない）。
+  if (remainingMs() <= 0) {
+    return failed(TIMEOUT_ERROR_CODE, notAcknowledged);
+  }
+
   try {
     const transport = new StreamableHTTPClientTransport(new URL(options.url), {
       requestInit: options.requestHeaders ? { headers: options.requestHeaders } : undefined,
     });
-    await connectPinned(client, transport);
+    try {
+      await connectPinned(client, transport, { timeout: remainingMs() });
 
-    if (!options.skipResourceListCheck) {
-      const resources = await client.listResources(undefined, UNCACHED);
-      if (!resources.resources.some((resource) => resource.uri === uri)) {
-        return failed("RESOURCE_NOT_FOUND", notAcknowledged);
+      if (!options.skipResourceListCheck) {
+        const resources = await client.listResources(undefined, budgeted());
+        if (!resources.resources.some((resource) => resource.uri === uri)) {
+          return failed("RESOURCE_NOT_FOUND", notAcknowledged);
+        }
       }
+    } catch (error) {
+      if (isRequestTimeout(error)) {
+        return failed(TIMEOUT_ERROR_CODE, notAcknowledged);
+      }
+      throw error;
     }
 
     // 通知ハンドラは listen より前に登録する。ack 直後の通知を取りこぼさないため。
@@ -119,9 +138,23 @@ export async function runResourceStream(options: ResourceStreamOptions): Promise
       let notificationUri: string | null = null;
 
       for (;;) {
-        const text = getResourceText(await client.readResource({ uri }, UNCACHED));
-        const json = parseJson(text);
-        matched = evaluateUntil(until, json);
+        if (remainingMs() <= 0) {
+          errorCode = TIMEOUT_ERROR_CODE;
+          break;
+        }
+        let text: string;
+        try {
+          text = getResourceText(await client.readResource({ uri }, budgeted()));
+        } catch (error) {
+          if (!isRequestTimeout(error)) {
+            throw error;
+          }
+          errorCode = TIMEOUT_ERROR_CODE;
+          break;
+        }
+        const evaluated = evaluateSnapshot(until, text);
+        const { json } = evaluated;
+        matched = evaluated.matched;
         onEvent({ type: "snapshot", source, notificationUri, text, json, matched });
         if (matched) {
           break;

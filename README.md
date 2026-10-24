@@ -129,7 +129,7 @@ stdoutに1行1JSONを、受信の都度flushして出力します。診断・警
 | `end` | 終了時（1回） | `reason`（`until-matched` / `error`）、`closeReason`、`errorCode`、`notificationCount`、`recommendedNextAction` |
 
 - **終了条件** `--until <JSON Pointer>=<JSON値>` は `--jsonl` で必須です。`json` の [RFC 6901](https://datatracker.ietf.org/doc/html/rfc6901) Pointerの値がJSON値と一致（深い等価）したsnapshotで終了します。文字列は `--until /kind=approved` のように引用します。最初の `=` でPointerと値を分けます。本文がJSONでない・Pointerが存在しない場合は不一致として待機を続けます。CLIはPR・HEAD・Verdictを解釈せず、`--until` の機械的な一致だけを見ます。
-- **終了コード** 条件一致は0、それ以外（timeout・切断・引数不正・通信失敗）は1。失敗時も `end` 行（`reason: "error"`、`errorCode`）を出力します。timeoutや切断を成功扱いにせず、再enqueueなどの自動復旧もしません。
+- **終了コード** 条件一致は0、それ以外（timeout・切断・引数不正・通信失敗）は1。失敗時も `end` 行（`reason: "error"`、`errorCode`）を出力します。`--timeout-ms` は接続・一覧確認・各readを含む全体の予算で、予算を超えたreadは一致する値であっても成功にせず `NOTIFICATION_TIMEOUT` で終了します。timeoutや切断を成功扱いにせず、再enqueueなどの自動復旧もしません。
 - **既完了** listen前に結果が確定していても、ack後の現在値readで検出して即終了します。通知の取りこぼしは履歴再生ではなく、最新のsnapshotで補います。
 - **Git Bash** 先頭の `/` が引数のパス変換で書き換わると `INVALID_ARGS` で失敗します。`MSYS_NO_PATHCONV=1` を設定してください。
 

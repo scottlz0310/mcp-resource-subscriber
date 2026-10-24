@@ -94,6 +94,10 @@ export function createProbeServer(deps: ProbeServerDeps): McpServer {
     const uri = request.params.uri;
     assertKnownUri(uri);
 
+    if (config.readDelayMs) {
+      await new Promise((resolve) => setTimeout(resolve, config.readDelayMs));
+    }
+
     // 状態を読む前に通知する。購読サイクル先頭での初期状態リセットをこの応答へ反映させるため。
     deps.onResourceRead?.(uri);
 

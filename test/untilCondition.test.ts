@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { evaluateUntil, parseUntil, UntilParseError } from "../src/client/untilCondition.js";
+import { evaluateSnapshot, evaluateUntil, parseUntil, UntilParseError } from "../src/client/untilCondition.js";
+
+describe("evaluateSnapshot", () => {
+  it.each([
+    ["非 JSON 本文は空 Pointer の =null に一致しない", "status: pending\nversion: 1", "", null, false, null],
+    ["空文字列は非 JSON として不一致", "", "", null, false, null],
+    ["JSON の null 本文は空 Pointer の =null に一致する", "null", "", null, true, null],
+    ["JSON object の一致", '{"terminal":true}', "/terminal", true, true, { terminal: true }],
+    ["JSON object の不一致", '{"terminal":false}', "/terminal", true, false, { terminal: false }],
+  ])("%s", (_name, text, pointer, expected, matched, json) => {
+    expect(evaluateSnapshot({ pointer, expected }, text)).toEqual({ json, matched });
+  });
+});
 
 describe("parseUntil", () => {
   it.each([
