@@ -38,6 +38,7 @@ CLIをMCPサーバーとして登録せず、シェルから呼び出してく�
 | `--uri <uri>` | 購読URI。`MCP_PROBE_URI` でも指定可能 |
 | `--timeout-ms <ms>` | タイムアウト。既定15000。`MCP_PROBE_TIMEOUT_MS` |
 | `--json` | stdoutに単一JSON。診断・警告はstderr |
+| `--jsonl` / `--until <pointer>=<json>` | 更新を1行1JSONで逐次出力し、条件一致まで終了しない。[逐次出力](#逐次出力--jsonl)を参照 |
 | `--skip-resource-list-check` | 一覧に載らない動的resourceの `resources/list` 確認を省略。`MCP_PROBE_SKIP_LIST_CHECK=true` |
 | `--auth-token <tok>` | 明示Bearer token。露出を避けるため `MCP_PROBE_AUTH_TOKEN` を推奨 |
 | `--login` / `--logout` | Gatewayへの対話ログイン／指定originのキャッシュ削除 |
@@ -108,7 +109,38 @@ phase-summary route=subscription url=<url> uri=<uri>
 | `TLS_CERT_UNTRUSTED` | TLS証明書を信頼できない。`NODE_EXTRA_CA_CERTS` または `NODE_USE_SYSTEM_CA=1` を確認 |
 | `DNS_LOOKUP_FAILED` / `CONNECTION_REFUSED` | 名前解決失敗／接続拒否 |
 | `AUTH_LOGIN_REQUIRED` / `AUTH_TIMEOUT` / `AUTH_REFRESH_FAILED` | 再ログインが必要／認証処理の上限超過／一時的なrefresh失敗 |
+| `UNTIL_REQUIRED` / `INVALID_ARGS` | `--jsonl` で `--until` が未指定／`--until` の書式不正・`--json` との併用・`--jsonl` なしの `--until`（いずれも通信前に失敗） |
 | `INTERNAL_ERROR` | 引数不正、または上記に分類されない失敗 |
+
+## 逐次出力（`--jsonl`）
+
+途中の更新を呼び出し元へ都度渡したい場合に使うopt-inの出力です。既存の `--json`（終了時の単一JSON）と行形式は変わりません。
+
+```bash
+resource-bridge-cli   --url https://gateway.example/mcp/review-raven   --uri review-raven://requests/<cycleId>   --jsonl --until /terminal=true   --timeout-ms 1200000
+```
+
+stdoutに1行1JSONを、受信の都度flushして出力します。診断・警告はstderr。各行は `schemaVersion: 1` を持ち、既存の版の項目は変更しません。
+
+| `type` | 出力されるとき | 主な項目 |
+|---|---|---|
+| `ack` | listenのackとURI受理を検証した直後 | `resourceUri`、`honoredUris` |
+| `snapshot` | ack後の現在値read（`source: "post-listen"`）と、通知を受けた後のread（`"notification"`）ごと | `notificationUri`、`text`（本文そのまま）、`json`（JSONとして解釈できなければnull）、`matched` |
+| `end` | 終了時（1回） | `reason`（`until-matched` / `error`）、`closeReason`、`errorCode`、`notificationCount`、`recommendedNextAction` |
+
+- **終了条件** `--until <JSON Pointer>=<JSON値>` は `--jsonl` で必須です。`json` の [RFC 6901](https://datatracker.ietf.org/doc/html/rfc6901) Pointerの値がJSON値と一致（深い等価）したsnapshotで終了します。文字列は `--until /kind=approved` のように引用します。最初の `=` でPointerと値を分けます。本文がJSONでない・Pointerが存在しない場合は不一致として待機を続けます。CLIはPR・HEAD・Verdictを解釈せず、`--until` の機械的な一致だけを見ます。
+- **終了コード** 条件一致は0、それ以外（timeout・切断・引数不正・通信失敗）は1。失敗時も `end` 行（`reason: "error"`、`errorCode`）を出力します。timeoutや切断を成功扱いにせず、再enqueueなどの自動復旧もしません。
+- **既完了** listen前に結果が確定していても、ack後の現在値readで検出して即終了します。通知の取りこぼしは履歴再生ではなく、最新のsnapshotで補います。
+- **Git Bash** 先頭の `/` が引数のパス変換で書き換わると `INVALID_ARGS` で失敗します。`MSYS_NO_PATHCONV=1` を設定してください。
+
+```jsonl
+{"schemaVersion":1,"type":"ack","resourceUri":"test://review/progress","honoredUris":["test://review/progress"]}
+{"schemaVersion":1,"type":"snapshot","source":"post-listen","notificationUri":null,"text":"{\"stage\":\"ciPending\",\"terminal\":false}","json":{"stage":"ciPending","terminal":false},"matched":false}
+{"schemaVersion":1,"type":"snapshot","source":"notification","notificationUri":"test://review/progress","text":"{\"stage\":\"reviewed\",\"terminal\":true}","json":{"stage":"reviewed","terminal":true},"matched":true}
+{"schemaVersion":1,"type":"end","reason":"until-matched","closeReason":"local","errorCode":null,"notificationCount":2,"recommendedNextAction":null}
+```
+
+fixtureの `test://review/progress` は、`updateDelaySeconds` ごとに4段階（`ciPending` → `waiting` → `running` → `reviewed`、最後だけ `terminal: true`）へ進みます。
 
 ## 単発tool呼び出し
 

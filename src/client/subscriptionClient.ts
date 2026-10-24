@@ -60,18 +60,18 @@ const RESOURCE_UPDATED_METHOD = "notifications/resources/updated";
  * 返すと probe が古い内容を現在値として報告してしまう。probe は常に実サーバーの
  * 現在値を観測するのが契約なので、cacheable verb は明示的に bypass する。
  */
-const UNCACHED: { cacheMode: "bypass" } = { cacheMode: "bypass" };
+export const UNCACHED: { cacheMode: "bypass" } = { cacheMode: "bypass" };
 const NON_TERMINAL_RECOMMENDED_ACTIONS = new Set(["POLL_AFTER"]);
 
 /** Thrown into a pending notification wait when the listen stream ends first. */
-class SubscriptionClosedError extends Error {
+export class SubscriptionClosedError extends Error {
   constructor(readonly reason: "local" | "graceful" | "remote") {
     super(`subscriptions/listen stream closed (${reason})`);
     this.name = "SubscriptionClosedError";
   }
 }
 
-function getResourceText(result: Awaited<ReturnType<Client["readResource"]>>): string {
+export function getResourceText(result: Awaited<ReturnType<Client["readResource"]>>): string {
   const first = result.contents[0];
   if (!first || !("text" in first)) {
     throw new Error("Expected text resource content");
@@ -85,7 +85,7 @@ interface ResourceUpdateEvent {
   uri: string;
 }
 
-interface ResourceUpdateQueue {
+export interface ResourceUpdateQueue {
   readonly receivedCount: number;
   readonly lastUri: string;
   readonly waitAfter: (sequence: number, timeoutMs: number) => Promise<ResourceUpdateEvent>;
@@ -98,7 +98,7 @@ interface ResourceUpdateQueue {
   readonly cancel: () => void;
 }
 
-function createResourceUpdateQueue(client: Client, uri: string): ResourceUpdateQueue {
+export function createResourceUpdateQueue(client: Client, uri: string): ResourceUpdateQueue {
   const events: ResourceUpdateEvent[] = [];
   let receivedCount = 0;
   let lastUri = "";
@@ -243,7 +243,7 @@ function shouldWaitForNextUpdate(text: string): boolean {
 }
 
 /** Maps a failed wait to an error code, distinguishing a dead stream from a quiet one. */
-function classifyWaitFailure(error: unknown): string {
+export function classifyWaitFailure(error: unknown): string {
   if (error instanceof SubscriptionClosedError) {
     return error.reason === "remote" ? "SUBSCRIPTION_DISCONNECTED" : "SUBSCRIPTION_CLOSED";
   }

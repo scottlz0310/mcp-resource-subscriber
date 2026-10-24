@@ -17,4 +17,10 @@
 - [x] Dockerfile を Corepack パターンに刷新し、packageManager への一本化を実施
 - [ ] 独立レビュー・同じHEADのCIを確認してマージする
 
+## 逐次購読出力 `--jsonl` / `--until`（#225、review-raven#144 R2）
 
+- [x] オプション名（`--jsonl`）と `--until` 必須の方針を利用者と合意する
+- [x] `--jsonl` と `--until` の実装、4段階fixture、実HTTP/サブプロセスでのテスト（途中行の先着・terminalまでの継続・既完了・切断・timeout）
+- [x] README・移行文書・CHANGELOGを更新し、既存の `--json`・`call`・認証・終了コードの維持を確認する
+- [ ] 独立レビュー・同じHEADのCIを確認してマージする
+- [ ] 公開（npm）と呼び出し側（Mcp-Docker skill / Squirrel）の利用切替は別Issue・別許可（Mcp-Docker#393）
