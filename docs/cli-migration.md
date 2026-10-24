@@ -36,6 +36,7 @@
 
 - 購読URIは `--uri` または `MCP_PROBE_URI` で明示する。未指定・空文字は `RESOURCE_URI_REQUIRED`、終了コード1。既存JSONの `resourceUri` はstringのまま、未指定なら空文字を返す。
 - `call` / login / logout / help / version は購読URIを要求しない。
+- 逐次出力 `--jsonl` / `--until` は既存契約への追加（opt-in）で、`--json` 単一出力・非JSON出力・終了コードを変えない。行schemaと終了条件はREADMEの「逐次出力」を正本とする。
 - JSON、非JSON出力、終了コード、timeout、protocol固定、ack/URI受理、通知race、切断・認証失敗の扱いを維持する。
 - HEAD/最終statusの確認は呼び出し元が行う。CLIの正常終了だけでレビュー完了・approveとは判断しない。
 - token cacheのOS state dir・SQLite形式・origin単位の識別・client_id・refresh/rotation・`MCP_PROBE_*` を維持する。改名を理由にキャッシュや実データを移動・削除しない。

@@ -11,7 +11,10 @@ import { buildCallErrorJsonOutput, buildCallJsonOutput } from "./callJsonOutput.
 import { buildErrorJsonOutput, buildJsonOutput } from "./jsonOutput.js";
 import { classifyNetworkError } from "./networkErrorClassification.js";
 import { PROTOCOL_UNSUPPORTED_HINT, ProtocolNegotiationError } from "./protocolNegotiation.js";
+import { runResourceStream } from "./streamClient.js";
+import { formatStreamEnd, formatStreamError, formatStreamEvent } from "./streamOutput.js";
 import { extractRecommendedAction, runResourceSubscription } from "./subscriptionClient.js";
+import { parseUntil, UntilParseError } from "./untilCondition.js";
 
 const TOOL_REQUEST_REJECTED_HINT =
   "The server rejected the tools/call request before running the tool (unknown tool name or invalid arguments). Check --tool and --args.";
@@ -72,6 +75,7 @@ MCP resource の購読・結果配送と単発 tool 呼び出しを行う CLI �
 
 使い方:
   resource-bridge-cli --url <server-url> --uri <resource-uri> [--timeout-ms <ms>] [--json]
+  resource-bridge-cli --url <server-url> --uri <resource-uri> --jsonl --until <pointer>=<json> [--timeout-ms <ms>]
   resource-bridge-cli call --url <server-url> --tool <name> [--args <json>] [--json]
   resource-bridge-cli --login --url <gateway-mcp-url>
   resource-bridge-cli --logout --url <gateway-mcp-url>
@@ -90,6 +94,13 @@ MCP resource の購読・結果配送と単発 tool 呼び出しを行う CLI �
   --skip-resource-list-check
                      resources/list に載らない動的URIで一覧確認を省略します。
                      環境変数: MCP_PROBE_SKIP_LIST_CHECK=true
+  --jsonl            更新のたびに 1 行 1 JSON（ack / snapshot / end）を stdout へ逐次出力します。
+                     --until の条件が一致するまでプロセスは終了しません。--json とは併用できません。
+  --until <p>=<json> --jsonl で必須。snapshot 本文を JSON として解釈し、JSON Pointer(RFC 6901) の値が
+                     JSON 値と一致したら終了します（例: --until /terminal=true、文字列は
+                     --until '/kind="approved"'）。最初の '=' でPointerと値を分けます。
+                     JSON でない本文や Pointer の不在は不一致として待機を続けます。
+                     終了コード: 一致 0 / それ以外 1
 
 call オプション:
   --tool <name>      必須。呼び出す MCP tool 名。
@@ -200,7 +211,9 @@ function parseOptions() {
   const skipResourceListCheck =
     args.includes("--skip-resource-list-check") || process.env.MCP_PROBE_SKIP_LIST_CHECK === "true";
   const json = args.includes("--json");
-  return { url, uri, timeoutMs, authToken, skipResourceListCheck, authTokenFromFlag, json };
+  const jsonl = args.includes("--jsonl");
+  const untilRaw = readOption("until");
+  return { url, uri, timeoutMs, authToken, skipResourceListCheck, authTokenFromFlag, json, jsonl, untilRaw };
 }
 
 /**
@@ -447,6 +460,7 @@ if (args[0] === "call") {
   // Capture context outside try so the catch block can report actuals instead of unknowns.
   // Use peekOption (no-throw) so malformed args don't produce a bare stack trace before the try.
   const jsonMode = args.includes("--json");
+  const jsonlMode = args.includes("--jsonl");
   let capturedUrl: string | null = peekOption("url") ?? process.env.MCP_PROBE_URL ?? null;
   let capturedUri: string = peekOption("uri") ?? process.env.MCP_PROBE_URI ?? "";
 
@@ -455,8 +469,32 @@ if (args[0] === "call") {
     capturedUrl = options.url;
     capturedUri = options.uri;
 
-    if (options.url === null) {
-      if (options.json) {
+    // 出力形式・終了条件の引数エラーは通信前に失敗させる。--until だけ渡して
+    // 単発購読に落ちる（条件が黙って無視される）ことも許さない。
+    let usageError: string | null = null;
+    if (options.json && options.jsonl) {
+      usageError = "--json と --jsonl は併用できません。";
+    } else if (options.untilRaw !== undefined && !options.jsonl) {
+      usageError = "--until は --jsonl と併用してください。";
+    }
+
+    if (usageError !== null) {
+      console.error(usageError);
+      if (options.jsonl) {
+        process.stdout.write(formatStreamError("INVALID_ARGS"));
+      } else if (options.json) {
+        process.stdout.write(`${JSON.stringify(buildErrorJsonOutput("INVALID_ARGS", options.url, options.uri))}\n`);
+      } else {
+        console.log("error-code INVALID_ARGS");
+        console.log(
+          `phase-summary route=failed url=${options.url ?? "unknown"} uri=${options.uri} error-code=INVALID_ARGS`,
+        );
+      }
+      process.exitCode = 1;
+    } else if (options.url === null) {
+      if (options.jsonl) {
+        process.stdout.write(formatStreamError("SERVER_URL_UNKNOWN"));
+      } else if (options.json) {
         process.stdout.write(`${JSON.stringify(buildErrorJsonOutput("SERVER_URL_UNKNOWN", null, options.uri))}\n`);
       } else {
         console.log("error-code SERVER_URL_UNKNOWN");
@@ -465,13 +503,62 @@ if (args[0] === "call") {
       process.exitCode = 1;
     } else if (!options.uri) {
       console.error("購読には --uri または MCP_PROBE_URI が必要です。");
-      if (options.json) {
+      if (options.jsonl) {
+        process.stdout.write(formatStreamError("RESOURCE_URI_REQUIRED"));
+      } else if (options.json) {
         process.stdout.write(`${JSON.stringify(buildErrorJsonOutput("RESOURCE_URI_REQUIRED", options.url, ""))}\n`);
       } else {
         console.log("error-code RESOURCE_URI_REQUIRED");
         console.log(`phase-summary route=failed url=${options.url} uri= error-code=RESOURCE_URI_REQUIRED`);
       }
       process.exitCode = 1;
+    } else if (options.jsonl) {
+      let until: ReturnType<typeof parseUntil> | null = null;
+      let untilErrorCode = "UNTIL_REQUIRED";
+      if (options.untilRaw === undefined) {
+        console.error("--jsonl には --until <JSON Pointer>=<JSON値> が必要です。");
+      } else {
+        try {
+          until = parseUntil(options.untilRaw);
+        } catch (error) {
+          if (!(error instanceof UntilParseError)) {
+            throw error;
+          }
+          untilErrorCode = "INVALID_ARGS";
+          console.error(error.message);
+        }
+      }
+
+      if (until === null) {
+        process.stdout.write(formatStreamError(untilErrorCode));
+        process.exitCode = 1;
+      } else {
+        if (options.authTokenFromFlag) {
+          console.warn(
+            "warning: --auth-token value is visible in process lists and may be stored in shell history. Prefer MCP_PROBE_AUTH_TOKEN env var.",
+          );
+        }
+        const authStart = Date.now();
+        const bearerToken = await resolveBearerToken(options.url, options.authToken, options.timeoutMs);
+        const remainingTimeoutMs = Math.max(0, options.timeoutMs - (Date.now() - authStart));
+        const result = await runResourceStream({
+          url: options.url,
+          uri: options.uri,
+          timeoutMs: remainingTimeoutMs,
+          requestHeaders: bearerToken ? { Authorization: `Bearer ${bearerToken}` } : undefined,
+          skipResourceListCheck: options.skipResourceListCheck,
+          clientVersion: pkg.version,
+          until,
+          // 1 行ごとに即時 write する。終了まで溜めると呼び出し元が途中報告できない。
+          onEvent: (event) => {
+            process.stdout.write(formatStreamEvent(event));
+          },
+        });
+        process.stdout.write(formatStreamEnd(result));
+        if (!result.matched) {
+          process.exitCode = 1;
+        }
+      }
     } else {
       if (options.authTokenFromFlag) {
         console.warn(
@@ -529,7 +616,9 @@ if (args[0] === "call") {
         console.error(`hint: ${classified.recommendedNextAction}`);
       }
     }
-    if (jsonMode) {
+    if (jsonlMode) {
+      process.stdout.write(formatStreamError(errorCode, recommendedNextAction));
+    } else if (jsonMode) {
       process.stdout.write(
         `${JSON.stringify(buildErrorJsonOutput(errorCode, capturedUrl, capturedUri, recommendedNextAction))}\n`,
       );

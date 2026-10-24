@@ -9,7 +9,7 @@ import express, { type Request, type Response } from "express";
 import type { TestConfig } from "./config.js";
 import type { LogSink } from "./logger.js";
 import { createProbeServer } from "./mcpServer.js";
-import { REVIEW_STATUS_URI, ReviewStatusStore } from "./resourceState.js";
+import { REVIEW_PROGRESS_URI, REVIEW_STATUS_URI, ReviewProgressStore, ReviewStatusStore } from "./resourceState.js";
 
 export interface ProbeHttpApp {
   app: express.Express;
@@ -22,7 +22,9 @@ export function createMcpHttpApp(config: TestConfig, log: LogSink = () => undefi
   // 2026-07-28 では McpServer をリクエストごとに作り直すため、resource の状態と
   // 更新シミュレーションは handler の外（アプリのスコープ）に置く。
   const store = new ReviewStatusStore(config);
+  const progress = new ReviewProgressStore();
   let updateTimer: NodeJS.Timeout | undefined;
+  let progressTimer: NodeJS.Timeout | undefined;
   let openListenStreams = 0;
 
   const innerBus = new InMemoryServerEventBus((error) => log(`[server/error] ${error.message}`));
@@ -37,6 +39,7 @@ export function createMcpHttpApp(config: TestConfig, log: LogSink = () => undefi
 
       if (++openListenStreams === 1) {
         scheduleUpdate();
+        scheduleProgress();
       }
 
       return () => {
@@ -44,6 +47,7 @@ export function createMcpHttpApp(config: TestConfig, log: LogSink = () => undefi
           released = true;
           if (--openListenStreams === 0) {
             clearUpdateTimer();
+            clearProgressTimer();
           }
         }
         unsubscribe();
@@ -51,16 +55,26 @@ export function createMcpHttpApp(config: TestConfig, log: LogSink = () => undefi
     },
   };
 
-  const handler = createMcpHandler(() => createProbeServer({ config, store, log, onResourceRead: startCycle }), {
-    legacy: "reject",
-    bus,
-    onerror: (error) => log(`[server/error] ${error.message}`),
-  });
+  const handler = createMcpHandler(
+    () => createProbeServer({ config, store, progress, log, onResourceRead: startCycle }),
+    {
+      legacy: "reject",
+      bus,
+      onerror: (error) => log(`[server/error] ${error.message}`),
+    },
+  );
 
   function clearUpdateTimer(): void {
     if (updateTimer) {
       clearTimeout(updateTimer);
       updateTimer = undefined;
+    }
+  }
+
+  function clearProgressTimer(): void {
+    if (progressTimer) {
+      clearTimeout(progressTimer);
+      progressTimer = undefined;
     }
   }
 
@@ -72,6 +86,7 @@ export function createMcpHttpApp(config: TestConfig, log: LogSink = () => undefi
   function startCycle(): void {
     if (openListenStreams === 0) {
       store.reset();
+      progress.reset();
     }
   }
 
@@ -97,6 +112,21 @@ export function createMcpHttpApp(config: TestConfig, log: LogSink = () => undefi
     updateTimer.unref();
   }
 
+  /** stream の開通を起点に、最終段階まで updateDelaySeconds ごとに段階を進めて通知する（status の 1 回更新とは独立）。 */
+  function scheduleProgress(): void {
+    clearProgressTimer();
+
+    progressTimer = setTimeout(() => {
+      progressTimer = undefined;
+      progress.advance();
+      handler.notify.resourceUpdated(REVIEW_PROGRESS_URI);
+      if (!progress.isFinal) {
+        scheduleProgress();
+      }
+    }, config.updateDelaySeconds * 1000);
+    progressTimer.unref();
+  }
+
   const nodeHandler = toNodeHandler(handler, {
     onerror: (error) => log(`[server/error] ${error.message}`),
   });
@@ -120,6 +150,7 @@ export function createMcpHttpApp(config: TestConfig, log: LogSink = () => undefi
     app,
     close: async () => {
       clearUpdateTimer();
+      clearProgressTimer();
       await handler.close();
     },
   };

@@ -3,9 +3,13 @@ import { z } from "zod";
 import type { TestConfig } from "./config.js";
 import type { LogSink } from "./logger.js";
 import {
+  REVIEW_PROGRESS_MIME_TYPE,
+  REVIEW_PROGRESS_RESOURCE,
+  REVIEW_PROGRESS_URI,
   REVIEW_STATUS_MIME_TYPE,
   REVIEW_STATUS_RESOURCE,
   REVIEW_STATUS_URI,
+  type ReviewProgressStore,
   type ReviewStatusStore,
   renderReviewStatus,
 } from "./resourceState.js";
@@ -14,19 +18,20 @@ export interface ProbeServerDeps {
   config: TestConfig;
   /** リクエスト間で共有される状態。McpServer は 2026-07-28 ではリクエストごとに作り直されるため、ここに置けない。 */
   store: ReviewStatusStore;
+  progress: ReviewProgressStore;
   log?: LogSink;
   /** resources/read を受けたときに呼ばれる。購読サイクル境界の判定に使う。 */
   onResourceRead?: (uri: string) => void;
 }
 
-function assertReviewStatusUri(uri: string): void {
-  if (uri !== REVIEW_STATUS_URI) {
+function assertKnownUri(uri: string): void {
+  if (uri !== REVIEW_STATUS_URI && uri !== REVIEW_PROGRESS_URI) {
     throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Unknown resource URI: ${uri}`);
   }
 }
 
 export function createProbeServer(deps: ProbeServerDeps): McpServer {
-  const { config, store } = deps;
+  const { config, store, progress } = deps;
   const log: LogSink = deps.log ?? (() => undefined);
 
   const server = new McpServer(
@@ -81,16 +86,27 @@ export function createProbeServer(deps: ProbeServerDeps): McpServer {
   server.server.setRequestHandler("resources/list", async () => {
     log("[resources/list] requested");
     return {
-      resources: [REVIEW_STATUS_RESOURCE],
+      resources: [REVIEW_STATUS_RESOURCE, REVIEW_PROGRESS_RESOURCE],
     };
   });
 
   server.server.setRequestHandler("resources/read", async (request) => {
     const uri = request.params.uri;
-    assertReviewStatusUri(uri);
+    assertKnownUri(uri);
+
+    if (config.readDelayMs) {
+      await new Promise((resolve) => setTimeout(resolve, config.readDelayMs));
+    }
 
     // 状態を読む前に通知する。購読サイクル先頭での初期状態リセットをこの応答へ反映させるため。
     deps.onResourceRead?.(uri);
+
+    if (uri === REVIEW_PROGRESS_URI) {
+      return {
+        contents: [{ uri, mimeType: REVIEW_PROGRESS_MIME_TYPE, text: progress.render() }],
+      };
+    }
+
     const state = store.get();
     log(`[resources/read] uri=${uri} version=${state.version}`);
 
