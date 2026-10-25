@@ -2,21 +2,21 @@ name: Publish
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      publish:
-        description: 'Publish to npm (true = publish; false = build/test only, no publish)'
-        type: boolean
-        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: resource-bridge-release
+  cancel-in-progress: false
 
 jobs:
-  publish:
+  dry-run:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write  # required for gh release create
-      id-token: write  # required for npm Trusted Publishing (OIDC)
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -27,14 +27,109 @@ jobs:
           node-version: '26.12.1'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run check
       - run: pnpm run build
       - run: pnpm run typecheck
       - run: pnpm test
-      - name: Publish to npm
-        if: startsWith(github.ref, 'refs/tags/v') || inputs.publish == true
-        run: npm publish --provenance --access public
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: gh release create "${{ github.ref_name }}" --generate-notes
+
+  draft:
+    if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'chore(release):')
+    uses: scottlz0310/release-automate/.github/workflows/reusable-publish-release.yml@7f53bc1716dc7da1740be166e55b5d94b33041e6 # v3.2.0
+    permissions:
+      contents: write
+    with:
+      draft: true
+
+  publish:
+    needs: draft
+    if: needs.draft.outputs.release_state == 'draft'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.draft.outputs.target_sha }}
+      - uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26.12.1'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run check
+      - run: pnpm run build
+      - run: pnpm run typecheck
+      - run: pnpm test
+      - name: 配布 tarball と CLI の版を検証
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.draft.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          test "$(node -p "require('./package.json').version")" = "${TAG#v}"
+          pnpm pack --pack-destination package-output
+          packages=(package-output/*.tgz)
+          test "${#packages[@]}" = 1
+          tar -tzf "${packages[0]}" > package-files.txt
+          grep -qx 'package/dist/src/client/cli.js' package-files.txt
+          if grep -q '^package/dist/src/server/' package-files.txt; then
+            echo '::error::fixture サーバーが公開 tarball に含まれています'
+            exit 1
+          fi
+          mkdir packed
+          tar xzf "${packages[0]}" -C packed
+          ln -s "$GITHUB_WORKSPACE/node_modules" packed/package/node_modules
+          test "$(node packed/package/dist/src/client/cli.js --version)" = "resource-bridge-cli $TAG"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: npm-payload
+          path: package-output/*.tgz
+          if-no-files-found: error
+      - name: 同じ workflow から OIDC で npm 公開
+        env:
+          TAG: ${{ needs.draft.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          version=${TAG#v}
+          args=(--provenance --access public)
+          if [[ "${version%%+*}" == *-* ]]; then args+=(--tag next); fi
+          npm publish package-output/*.tgz "${args[@]}"
+
+  verify-package:
+    needs: [draft, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26.12.1'
+      - uses: actions/download-artifact@v8
+        with:
+          name: npm-payload
+          path: expected
+      - name: 公開 tarball の一致と provenance の存在を確認
+        env:
+          TAG: ${{ needs.draft.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          timeout 60 npm view "resource-bridge-cli@${TAG#v}" --json > metadata.json
+          tarball=$(jq -er '.dist.tarball' metadata.json)
+          jq -er '.dist.attestations.url' metadata.json
+          curl -fSL --connect-timeout 10 --max-time 60 "$tarball" -o registry.tgz
+          packages=(expected/*.tgz)
+          test "${#packages[@]}" = 1
+          cmp "${packages[0]}" registry.tgz
+
+  finalize:
+    needs: [draft, publish, verify-package]
+    uses: scottlz0310/release-automate/.github/workflows/reusable-finalize-release.yml@7f53bc1716dc7da1740be166e55b5d94b33041e6 # v3.2.0
+    permissions:
+      contents: write
+    with:
+      tag_name: ${{ needs.draft.outputs.tag_name }}
+      target_sha: ${{ needs.draft.outputs.target_sha }}
+      append_release_evidence: true
+      verification_results: ${{ toJSON(needs) }}

@@ -31,7 +31,7 @@ node dist/src/client/cli.js --url http://127.0.0.1:8089/mcp --uri test://review/
 docker compose up --build
 ```
 
-CI順序は install → check → build → test:coverage → docker build。Publishの検証は install → build → typecheck → test。`dist/**` はVitestの収集から除外し、build後の二重実行を避ける。既存のpnpm/Biome/tsc/Vitest/lefthookを維持する。
+CI順序は install → check → build → test:coverage → docker build。Publishの検証は install → check → build → typecheck → test → pack/配布CLI検証 → npm公開 → 公開tarball再取得。準備・draft・finalizeと許可の境界は `docs/release-automation.md` に従う。`dist/**` はVitestの収集から除外し、build後の二重実行を避ける。既存のpnpm/Biome/tsc/Vitest/lefthookを維持する。
 
 ## コードと契約
 
