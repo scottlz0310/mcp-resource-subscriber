@@ -66,7 +66,7 @@ handlerの `notify.resourceUpdated()` が通知を配信する。resource handle
 
 [README](README.md)、[名称変更・削除一覧と移行手順](docs/cli-migration.md)、[protocol移行記録](docs/protocol-migration.md)を参照する。results・旧検証ガイド・旧skillテンプレートは履歴として維持し、現行運用の入口にしない。Mcp-Dockerのskill配布先やSquirrelのユーザー設定はこのrepoから直接変更しない。
 
-commit前にCHANGELOG.mdとtasks.mdを更新する。PRは同じ変更に必要な実装・テスト・設定・文書をまとめる。1000行超は分割検討の目安であり、行数だけで機能を分割しない。
+commit前にCHANGELOG.mdを更新する。PRは同じ変更に必要な実装・テスト・設定・文書をまとめる。1000行超は分割検討の目安であり、行数だけで機能を分割しない。
 
 ## シークレットと証跡
 

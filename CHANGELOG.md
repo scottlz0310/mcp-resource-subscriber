@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- 作業タスクの状態を、Issue・PR・CHANGELOGと二重に管理していた `tasks.md` を削除した。状態の正本はIssueとPRで、`AGENTS.md` の「commit前に更新する」対象からも外した。
+
 ## [0.8.0] - 2026-10-25
 
 ### Added
