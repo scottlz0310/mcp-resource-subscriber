@@ -1,5 +1,7 @@
 # resource-bridge-cli
 
+リリースの準備・公開は [リリース手順](docs/release-automation.md) を参照してください。
+
 MCP resource の購読・結果配送と、単発の `tools/call` を行う CLI クライアントです。シェルから実行し、stdout の結果を呼び出したエージェントの同じセッションへ返します。
 
 **MCP protocol revision は `2026-07-28` に固定**しています。`subscriptions/listen` を使用し、legacy protocol へフォールバックしません。対応していないサーバーは `PROTOCOL_UNSUPPORTED` で失敗します。
