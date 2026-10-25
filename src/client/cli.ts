@@ -11,6 +11,7 @@ import { buildCallErrorJsonOutput, buildCallJsonOutput } from "./callJsonOutput.
 import { buildErrorJsonOutput, buildJsonOutput } from "./jsonOutput.js";
 import { classifyNetworkError } from "./networkErrorClassification.js";
 import { PROTOCOL_UNSUPPORTED_HINT, ProtocolNegotiationError } from "./protocolNegotiation.js";
+import { runStatusWatchCommand } from "./statusWatchCommand.js";
 import { runResourceStream } from "./streamClient.js";
 import { formatStreamEnd, formatStreamError, formatStreamEvent } from "./streamOutput.js";
 import { extractRecommendedAction, runResourceSubscription } from "./subscriptionClient.js";
@@ -77,6 +78,7 @@ MCP resource の購読・結果配送と単発 tool 呼び出しを行う CLI �
   resource-bridge-cli --url <server-url> --uri <resource-uri> [--timeout-ms <ms>] [--json]
   resource-bridge-cli --url <server-url> --uri <resource-uri> --jsonl --until <pointer>=<json> [--timeout-ms <ms>]
   resource-bridge-cli call --url <server-url> --tool <name> [--args <json>] [--json]
+  resource-bridge-cli watch-review-status --key <owner/repo#N> --after <ISO8601> [--file <path>]
   resource-bridge-cli --login --url <gateway-mcp-url>
   resource-bridge-cli --logout --url <gateway-mcp-url>
 
@@ -106,6 +108,17 @@ call オプション:
   --tool <name>      必須。呼び出す MCP tool 名。
   --args <json>      tool 引数の JSON object。既定: {}
   終了コード: 成功 0 / tool エラー 1 / 認証エラー 2 / 通信・引数エラー 3
+
+watch-review-status オプション（同じ PC の Squirrel Notifier の review-status.json を監視。MCP 接続なし）:
+  --key <owner/repo#N>  必須。対象 PR（大文字小文字は区別しません）。
+  --after <ISO8601>   必須。enqueue_review の直前の時刻（UTC、小数秒つき推奨）。これより後に受信した項目だけを対象にします。
+  --file <path>      既定: %LocalAppData%/SquirrelNotifier/review-status.json
+  --interval-ms / --heartbeat-ms / --stale-ms / --not-received-ms / --timeout-ms
+                     既定: 1000 / 300000 / 180000 / 120000 / 1200000（このモードの --timeout-ms 既定は 20 分）
+  状態の変化ごとに 1 行 1 JSON（type: state / heartbeat / not_received / unobservable / recovered /
+  action_required / timeout / error）を出力します。"terminal": true の行で終了します。
+  "finished" はプロセスの終了結果で、Verdict ではありません。
+  終了コード: 完了 0 / 失敗で終了 1 / 引数エラー 2 / 手動待ち 3 / タイムアウト 4
 
 認証:
   --login            device flow でログインし、token をキャッシュします。
@@ -452,7 +465,10 @@ async function runCallCommand(): Promise<void> {
   }
 }
 
-if (args[0] === "call") {
+if (args[0] === "watch-review-status") {
+  // 同じ PC の Squirrel Notifier の公開 JSON を監視するモード。MCP には接続せず、引数・出力・終了コードは独自。
+  process.exitCode = await runStatusWatchCommand(args.slice(1), process.env);
+} else if (args[0] === "call") {
   // call mode has its own argument parsing / output / exit-code scheme;
   // never fall through into the subscribe flow below.
   await runCallCommand();

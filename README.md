@@ -142,6 +142,39 @@ stdoutに1行1JSONを、受信の都度flushして出力します。診断・警
 
 fixtureの `test://review/progress` は、`updateDelaySeconds` ごとに4段階（`ciPending` → `waiting` → `running` → `reviewed`、最後だけ `terminal: true`）へ進みます。
 
+## 同じ PC のレビュー進捗の監視（`watch-review-status`）
+
+Squirrel Notifier（v0.16.0 以降）が公開する `review-status.json`（公開契約 `schemaVersion: 1`）を監視し、**起動前から実行中・終了までの進捗**を、状態が変わるたびに 1 行ずつ出力します。MCP サーバーには接続せず、認証も要りません（同じ PC のファイルを読むだけです）。設計は [review-raven の設計メモ](https://github.com/scottlz0310/review-raven/blob/main/docs/design/review-progress-local-status.md) を参照してください。
+
+```bash
+resource-bridge-cli watch-review-status --key scottlz0310/review-raven#158 --after "$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+```
+
+- `--key <owner/repo#N>` 対象 PR（大文字小文字は区別しません）。
+- `--after <ISO8601>` `enqueue_review` の**直前**の時刻（UTC、末尾 `Z`）。これより後に受信した項目だけが今回の round です。前の round の `finished` は拾いません。**小数秒まで保持して比較する**ので、`date -u +%Y-%m-%dT%H:%M:%S.%NZ` のように小数秒つきで渡してください（秒精度でも動きますが、同じ秒に起きた enqueue と受信の前後は、小数秒がないと判定できません）。
+- `--file <path>` 既定は `%LocalAppData%/SquirrelNotifier/review-status.json`（`LOCALAPPDATA` が無い環境では必須）。
+- `--interval-ms`（1000）、`--heartbeat-ms`（300000）、`--stale-ms`（180000）、`--not-received-ms`（120000）、`--timeout-ms`（1200000）。**このモードの `--timeout-ms` は他のモードと違い、既定が 20 分**で、`MCP_PROBE_TIMEOUT_MS` は読みません。`--timeout-ms` は**全体の期限**で、ファイルの読み取り・再試行の待ち・`--interval-ms` の待ちを含みます。読み取りが止まっても期限で `timeout` を出し、期限を過ぎてから届いた結果（`finished` を含む）は処理しません。
+
+stdout に 1 行 1 JSON を出します（`schemaVersion: 1`、`type`、`key`、`at`）。`"terminal": true` の行が最後で、プロセスはそこで終了します。
+
+| `type` | 出力されるとき | 主な項目 |
+|---|---|---|
+| `state` | 対象の `(state, holdReason, round, queuePosition)` が変わったとき | `state`（`waiting` / `running` / `finished`）、`holdReason`（`ciPending` / `busy` / `manual` / `autoPause`）、`detail`。`finished` は `outcome`・`exitCode` を持ち、terminal |
+| `heartbeat` | 何も出さないまま `--heartbeat-ms` 経過したとき | `state`、`elapsedMs`。生存確認 |
+| `not_received` | 対象の項目が `--not-received-ms` 経っても現れないとき（1 回） | `waitedMs`、`previousRound`（前の round が残っているとき） |
+| `unobservable` | ファイルが無い／読めない／非対応の `schemaVersion`／`updatedAt` が `--stale-ms` より古い | `reason`（`no_file` / `unreadable` / `unsupported_schema` / `stale`）、`ageMs`。回復したら `recovered` |
+| `action_required` | `holdReason = manual`（利用者の操作待ち） | 「レビューする」か別 CLI での起動の案内。terminal |
+| `timeout` | `--timeout-ms` に達したとき | `elapsedMs`。terminal |
+| `error` | 引数エラー | `errorCode`（`INVALID_ARGUMENT`）、`message`。terminal |
+
+**終了コード:** 完了 0 / reviewer の失敗で終了 1 / 引数エラー 2 / 手動待ち 3 / タイムアウト 4。
+
+- **`finished` は Verdict ではありません。** `outcome` / `exitCode` は reviewer の**プロセスの終了結果**です。完了の判定は、PR の Verdict コメントと `review://status` の `headSha` で行います。実際のレビューでは、Verdict の投稿のほうが `finished` より先に届きます。
+- **状態の変化だけを出します。** Squirrel は 60 秒ごとに `updatedAt` だけを更新しますが、状態が同じなら行を増やしません。クライアントによっては、大きなツール出力の中間を省略するので、行は短く、少なく保っています。
+- **静かなまま詰まりません。** 観測できない・未受信・手動待ち・タイムアウトは、すべて行として出ます。失敗した終了（`outcome: "failed"`）も検知できますが、原因は行からは分かりません（Squirrel のログ `%LocalAppData%/SquirrelNotifier/logs/winui3.log` を確認します）。
+- Claude Code では、`Monitor` ツールでこのコマンドを動かすと、1 行が 1 通知として届きます。逐次通知を受け取れない CLI では、終了まで待って最後の行を読む使い方になります。
+- 同じ PC に限られます。別の PC の Squirrel のファイルは読めません。
+
 ## 単発tool呼び出し
 
 ```bash
