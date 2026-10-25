@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- テスト用 MCP サーバーの自己申告バージョンを `package.json` から導出し、リリース準備時の版の二重更新を不要にした。コンパイル後も JSON 原稿を参照し、公開 CLI の配布範囲は維持する。
+
 ### Removed
 
 - 作業タスクの状態を、Issue・PR・CHANGELOGと二重に管理していた `tasks.md` を削除した。状態の正本はIssueとPRで、`AGENTS.md` の「commit前に更新する」対象からも外した。
