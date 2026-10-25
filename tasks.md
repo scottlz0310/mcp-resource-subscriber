@@ -23,7 +23,8 @@
 - [x] `--jsonl` と `--until` の実装、4段階fixture、実HTTP/サブプロセスでのテスト（途中行の先着・terminalまでの継続・既完了・切断・timeout）
 - [x] README・移行文書・CHANGELOGを更新し、既存の `--json`・`call`・認証・終了コードの維持を確認する
 - [x] 独立レビュー・同じHEADのCIを確認してマージする（PR #226）
-- [ ] 公開（npm）と呼び出し側（Mcp-Docker skill / Squirrel）の利用切替は別Issue・別許可（Mcp-Docker#393）。公開は v0.8.0 に含める
+- [x] 公開（npm）: v0.8.0 に含めて公開した（2026-10-25、tag `v0.8.0` / commit `9f3ddc4`、provenance 付き）
+- [ ] 呼び出し側（Mcp-Docker skill / Squirrel）の利用切替は別Issue・別許可（Mcp-Docker#393）
 
 ## 進捗監視 `watch-review-status`（#228、review-raven#144 案C）
 
@@ -31,4 +32,5 @@
 - [x] 時刻比較（小数秒を保持）・対象の選択・状態機械を、DIとパラメータ化テストで実装する
 - [x] 実ファイルを使うCLIテスト（遷移・終了コード・引数エラー）と、README・CHANGELOGを更新する
 - [x] 独立レビュー・同じHEADのCIを確認してマージする（PR #229）
-- [ ] 公開（v0.8.0、従前の作法）と、reviewed側skill Phase W の見直し（Mcp-Docker、別PR）
+- [x] 公開（v0.8.0、従前の作法）。リリースノートは v0.7.0 と同じ構成で手書きし、Release に適用した
+- [ ] reviewed側skill Phase W の見直し（Mcp-Docker、別PR）。他CLI（Codex/Copilot/Antigravity）の逐次通知と、行列待ち（busy）を挟むroundでの確認
