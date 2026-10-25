@@ -24,3 +24,11 @@
 - [x] README・移行文書・CHANGELOGを更新し、既存の `--json`・`call`・認証・終了コードの維持を確認する
 - [ ] 独立レビュー・同じHEADのCIを確認してマージする
 - [ ] 公開（npm）と呼び出し側（Mcp-Docker skill / Squirrel）の利用切替は別Issue・別許可（Mcp-Docker#393）
+
+## 進捗監視 `watch-review-status`（#228、review-raven#144 案C）
+
+- [x] 設計メモの合意（review-raven#158）と、bash+jq の試作を実レビューroundで確認する
+- [x] 時刻比較（小数秒を保持）・対象の選択・状態機械を、DIとパラメータ化テストで実装する
+- [x] 実ファイルを使うCLIテスト（遷移・終了コード・引数エラー）と、README・CHANGELOGを更新する
+- [ ] 独立レビュー・同じHEADのCIを確認してマージする
+- [ ] 公開（従前の作法で版を上げる）と、reviewed側skill Phase W の見直し（Mcp-Docker、別PR）
