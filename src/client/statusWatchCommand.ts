@@ -134,9 +134,9 @@ export async function runStatusWatchCommand(
   }
   const { options, file } = parsed.value;
   const deps: StatusWatchDeps = {
-    readFile: () => readFile(file, "utf8"),
+    readFile: (signal) => readFile(file, { encoding: "utf8", signal }),
     now: () => Date.now(),
-    sleep: (ms) => delay(ms),
+    sleep: (ms, signal) => delay(ms, undefined, { signal }),
     write: (line) => {
       process.stdout.write(line);
     },

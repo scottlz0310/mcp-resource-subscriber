@@ -37,10 +37,11 @@ export interface StatusWatchOptions {
 }
 
 export interface StatusWatchDeps {
-  /** ファイルの内容を返す。存在しなければ `code: "ENOENT"` の Error を投げる。 */
-  readFile(): Promise<string>;
+  /** ファイルの内容を返す。存在しなければ `code: "ENOENT"` の Error を投げる。signal が中断されたら読み取りをやめる。 */
+  readFile(signal?: AbortSignal): Promise<string>;
   now(): number;
-  sleep(ms: number): Promise<void>;
+  /** ms 待つ。signal が中断されたら、待たずに AbortError で reject する。 */
+  sleep(ms: number, signal?: AbortSignal): Promise<void>;
   /** 1 イベント 1 行（末尾の改行を含む）。 */
   write(line: string): void;
 }
@@ -49,12 +50,17 @@ export interface StatusWatchDeps {
 const READ_ATTEMPTS = 3;
 const READ_RETRY_DELAY_MS = 200;
 
+type Bounded<T> = { timedOut: false; value: T } | { timedOut: true };
+
 type ReadResult =
   | { kind: "ok"; updatedAt: PreciseTime; observation: Observation }
   | { kind: "unobservable"; reason: "no_file" | "unreadable" | "unsupported_schema" };
 
 export async function runStatusWatch(options: StatusWatchOptions, deps: StatusWatchDeps): Promise<number> {
   const startedAt = deps.now();
+  /** 全体の期限。読み取り・再試行の待ち・監視間隔のすべてを、この残り時間で制限する。 */
+  const deadline = startedAt + options.timeoutMs;
+  const remainingMs = (): number => deadline - deps.now();
   let lastEmitAt = startedAt;
   let previousFingerprint: string | null = null;
   let unobservableReason: string | null = null;
@@ -77,17 +83,43 @@ export async function runStatusWatch(options: StatusWatchOptions, deps: StatusWa
     lastEmitAt = deps.now();
   }
 
-  async function read(): Promise<ReadResult> {
+  /**
+   * 作業を期限内に終えられなければ timedOut を返し、作業に中断（abort）を伝える。
+   * 読み取りが止まっても（ネットワークドライブ・ロックなど）、期限で timeout を出せるようにする。
+   */
+  async function withinDeadline<T>(work: (signal: AbortSignal) => Promise<T>): Promise<Bounded<T>> {
+    const controller = new AbortController();
+    const watchdog = deps.sleep(Math.max(remainingMs(), 0), controller.signal).then(
+      (): Bounded<T> => ({ timedOut: true }),
+      // 作業が先に終わって待ちを中断した場合は、タイムアウトにしない
+      () => new Promise<never>(() => {}),
+    );
+    try {
+      return await Promise.race([
+        work(controller.signal).then((value): Bounded<T> => ({ timedOut: false, value })),
+        watchdog,
+      ]);
+    } finally {
+      controller.abort();
+    }
+  }
+
+  function timeout(): number {
+    emit("timeout", { elapsedMs: deps.now() - startedAt }, true);
+    return STATUS_WATCH_EXIT.timeout;
+  }
+
+  async function read(signal: AbortSignal): Promise<ReadResult> {
     for (let attempt = 1; ; attempt++) {
       let text: string;
       try {
-        text = await deps.readFile();
+        text = await deps.readFile(signal);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") {
           return { kind: "unobservable", reason: "no_file" };
         }
         if (attempt < READ_ATTEMPTS) {
-          await deps.sleep(READ_RETRY_DELAY_MS);
+          await deps.sleep(Math.min(READ_RETRY_DELAY_MS, Math.max(remainingMs(), 0)), signal);
           continue;
         }
         return { kind: "unobservable", reason: "unreadable" };
@@ -98,7 +130,7 @@ export async function runStatusWatch(options: StatusWatchOptions, deps: StatusWa
       }
       if (parsed.kind === "invalid") {
         if (attempt < READ_ATTEMPTS) {
-          await deps.sleep(READ_RETRY_DELAY_MS);
+          await deps.sleep(Math.min(READ_RETRY_DELAY_MS, Math.max(remainingMs(), 0)), signal);
           continue;
         }
         return { kind: "unobservable", reason: "unreadable" };
@@ -162,13 +194,16 @@ export async function runStatusWatch(options: StatusWatchOptions, deps: StatusWa
   }
 
   for (;;) {
-    const now = deps.now();
-    if (now - startedAt >= options.timeoutMs) {
-      emit("timeout", { elapsedMs: now - startedAt }, true);
-      return STATUS_WATCH_EXIT.timeout;
+    if (remainingMs() <= 0) {
+      return timeout();
     }
 
-    const result = await read();
+    const bounded = await withinDeadline(read);
+    // 結果を処理する前にも期限を確認する。期限後に届いた finished を成功にしない
+    if (bounded.timedOut || remainingMs() <= 0) {
+      return timeout();
+    }
+    const result = bounded.value;
 
     let reason: string | null = null;
     let ageMs: number | null = null;
@@ -203,6 +238,6 @@ export async function runStatusWatch(options: StatusWatchOptions, deps: StatusWa
       emit("heartbeat", { state: unobservableReason !== null ? "unobservable" : lastState, elapsedMs });
     }
 
-    await deps.sleep(options.intervalMs);
+    await deps.sleep(Math.min(options.intervalMs, Math.max(remainingMs(), 0)));
   }
 }

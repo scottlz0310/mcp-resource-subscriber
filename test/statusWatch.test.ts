@@ -16,7 +16,10 @@ const OPTIONS: StatusWatchOptions = {
   timeoutMs: 60_000,
 };
 
-type Provider = (elapsedMs: number, nowIso: string) => string | Error;
+/** 読み取りが応答しない（ネットワークドライブのロックなど）ことを表す。 */
+const HANG = Symbol("hang");
+
+type Provider = (elapsedMs: number, nowIso: string) => string | Error | typeof HANG;
 
 interface Run {
   exitCode: number;
@@ -24,36 +27,100 @@ interface Run {
   /** 各行を出した時点の経過時間 */
   elapsedAt: number[];
   reads: number;
+  /** readFile に渡された signal が、終了までに中断されたか（止まった読み取りを打ち切れること）。 */
+  abortedReads: number;
 }
 
-/** 偽の時計。sleep が時間を進め、readFile は経過時間の関数として内容を返す。 */
-async function run(provider: Provider, options: Partial<StatusWatchOptions> = {}): Promise<Run> {
-  let now = START_MS;
+/** 仮想時刻のタイマー。時間は、実行中の処理が待っているときだけ、最も早いタイマーまで進む。 */
+class FakeClock {
+  now = START_MS;
+  private timers: Array<{ at: number; resolve: () => void }> = [];
+
+  sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
+    new Promise<void>((resolve, reject) => {
+      const timer = { at: this.now + ms, resolve };
+      this.timers.push(timer);
+      signal?.addEventListener(
+        "abort",
+        () => {
+          this.timers = this.timers.filter((candidate) => candidate !== timer);
+          reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+        },
+        { once: true },
+      );
+    });
+
+  /** 対象の処理が終わるまで、処理が待つたびに時間を進める。 */
+  async pump<T>(work: Promise<T>): Promise<T> {
+    let settled = false;
+    work.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    for (;;) {
+      // マイクロタスクを使い切らせる
+      await new Promise((resolve) => setImmediate(resolve));
+      if (settled) {
+        return work;
+      }
+      const next = this.timers.reduce<{ at: number; resolve: () => void } | null>(
+        (earliest, timer) => (earliest === null || timer.at < earliest.at ? timer : earliest),
+        null,
+      );
+      if (next === null) {
+        throw new Error("deadlock: 待っているタイマーがありません");
+      }
+      this.timers = this.timers.filter((timer) => timer !== next);
+      this.now = Math.max(this.now, next.at);
+      next.resolve();
+    }
+  }
+}
+
+/** 偽の時計。readFile は readMs だけ時間をかけて、そのときの経過時間の関数として内容を返す。 */
+async function run(
+  provider: Provider,
+  options: Partial<StatusWatchOptions> = {},
+  behavior: { readMs?: number } = {},
+): Promise<Run> {
+  const clock = new FakeClock();
   let reads = 0;
+  let abortedReads = 0;
   const lines: Array<Record<string, unknown>> = [];
   const elapsedAt: number[] = [];
-  const exitCode = await runStatusWatch(
-    { ...OPTIONS, ...options },
-    {
-      now: () => now,
-      sleep: async (ms) => {
-        now += ms;
+  const exitCode = await clock.pump(
+    runStatusWatch(
+      { ...OPTIONS, ...options },
+      {
+        now: () => clock.now,
+        sleep: clock.sleep,
+        readFile: async (signal) => {
+          reads++;
+          signal?.addEventListener("abort", () => abortedReads++, { once: true });
+          if (behavior.readMs !== undefined) {
+            await clock.sleep(behavior.readMs, signal);
+          }
+          const result = provider(clock.now - START_MS, new Date(clock.now).toISOString());
+          if (result === HANG) {
+            return new Promise<string>(() => {});
+          }
+          if (result instanceof Error) {
+            throw result;
+          }
+          return result;
+        },
+        write: (line) => {
+          lines.push(JSON.parse(line));
+          elapsedAt.push(clock.now - START_MS);
+        },
       },
-      readFile: async () => {
-        reads++;
-        const result = provider(now - START_MS, new Date(now).toISOString());
-        if (result instanceof Error) {
-          throw result;
-        }
-        return result;
-      },
-      write: (line) => {
-        lines.push(JSON.parse(line));
-        elapsedAt.push(now - START_MS);
-      },
-    },
+    ),
   );
-  return { exitCode, lines, elapsedAt, reads };
+  return { exitCode, lines, elapsedAt, reads, abortedReads };
 }
 
 function doc(nowIso: string, items: unknown[] = [], recent: unknown[] = [], updatedAt = nowIso): string {
@@ -236,6 +303,60 @@ describe("runStatusWatch: 静かなまま詰まらない", () => {
 
     expect(result.lines.at(-1)).toMatchObject({ type: "timeout", terminal: true });
     expect(result.exitCode).toBe(STATUS_WATCH_EXIT.timeout);
+  });
+});
+
+describe("runStatusWatch: --timeout-ms の期限", () => {
+  it("期限後に読み取りが終わった finished は、成功にせず timeout にする", async () => {
+    // 上限 1000ms で、読み取りに 2000ms かかる
+    const result = await run(
+      (_, nowIso) => doc(nowIso, [], [finished("completed", 0)]),
+      { timeoutMs: 1_000 },
+      { readMs: 2_000 },
+    );
+
+    expect(result.exitCode).toBe(STATUS_WATCH_EXIT.timeout);
+    expect(types(result)).toEqual(["timeout"]);
+  });
+
+  it("監視間隔が上限より長くても、上限で timeout を出す", async () => {
+    const result = await run((_, nowIso) => doc(nowIso, [running]), {
+      intervalMs: 60_000,
+      timeoutMs: 1_000,
+      heartbeatMs: 600_000,
+    });
+
+    expect(result.exitCode).toBe(STATUS_WATCH_EXIT.timeout);
+    expect(types(result)).toEqual(["state", "timeout"]);
+    expect(result.elapsedAt.at(-1)).toBe(1_000);
+  });
+
+  it("読み取りが止まっても、上限で timeout を出し、読み取りを中断する", async () => {
+    const result = await run(() => HANG, { timeoutMs: 5_000 });
+
+    expect(result.exitCode).toBe(STATUS_WATCH_EXIT.timeout);
+    expect(types(result)).toEqual(["timeout"]);
+    expect(result.elapsedAt.at(-1)).toBe(5_000);
+    expect(result.abortedReads).toBe(1);
+  });
+
+  it("再試行の待ちも上限に収まり、上限を超えて待たない", async () => {
+    // 壊れた JSON が続き、再試行（200ms × 2）が上限 300ms を超える
+    const result = await run(() => "{", { timeoutMs: 300, heartbeatMs: 600_000 });
+
+    expect(result.exitCode).toBe(STATUS_WATCH_EXIT.timeout);
+    expect(result.lines.at(-1)).toMatchObject({ type: "timeout", terminal: true });
+    expect(result.elapsedAt.at(-1)).toBe(300);
+  });
+
+  it("上限の直前に終わった読み取りは、通常どおり処理する", async () => {
+    const result = await run(
+      (_, nowIso) => doc(nowIso, [], [finished("completed", 0)]),
+      { timeoutMs: 1_000 },
+      { readMs: 999 },
+    );
+
+    expect(result.exitCode).toBe(STATUS_WATCH_EXIT.finishedCompleted);
   });
 });
 

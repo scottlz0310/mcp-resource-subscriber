@@ -153,7 +153,7 @@ resource-bridge-cli watch-review-status --key scottlz0310/review-raven#158 --aft
 - `--key <owner/repo#N>` 対象 PR（大文字小文字は区別しません）。
 - `--after <ISO8601>` `enqueue_review` の**直前**の時刻（UTC、末尾 `Z`）。これより後に受信した項目だけが今回の round です。前の round の `finished` は拾いません。**小数秒まで保持して比較する**ので、`date -u +%Y-%m-%dT%H:%M:%S.%NZ` のように小数秒つきで渡してください（秒精度でも動きますが、同じ秒に起きた enqueue と受信の前後は、小数秒がないと判定できません）。
 - `--file <path>` 既定は `%LocalAppData%/SquirrelNotifier/review-status.json`（`LOCALAPPDATA` が無い環境では必須）。
-- `--interval-ms`（1000）、`--heartbeat-ms`（300000）、`--stale-ms`（180000）、`--not-received-ms`（120000）、`--timeout-ms`（1200000）。**このモードの `--timeout-ms` は他のモードと違い、既定が 20 分**で、`MCP_PROBE_TIMEOUT_MS` は読みません。
+- `--interval-ms`（1000）、`--heartbeat-ms`（300000）、`--stale-ms`（180000）、`--not-received-ms`（120000）、`--timeout-ms`（1200000）。**このモードの `--timeout-ms` は他のモードと違い、既定が 20 分**で、`MCP_PROBE_TIMEOUT_MS` は読みません。`--timeout-ms` は**全体の期限**で、ファイルの読み取り・再試行の待ち・`--interval-ms` の待ちを含みます。読み取りが止まっても期限で `timeout` を出し、期限を過ぎてから届いた結果（`finished` を含む）は処理しません。
 
 stdout に 1 行 1 JSON を出します（`schemaVersion: 1`、`type`、`key`、`at`）。`"terminal": true` の行が最後で、プロセスはそこで終了します。
 
