@@ -1,5 +1,6 @@
 import { McpServer, ProtocolError, ProtocolErrorCode } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import packageInfo from "../../package.json" with { type: "json" };
 import type { TestConfig } from "./config.js";
 import type { LogSink } from "./logger.js";
 import {
@@ -37,7 +38,7 @@ export function createProbeServer(deps: ProbeServerDeps): McpServer {
   const server = new McpServer(
     {
       name: "mcp-resource-subscribe-test",
-      version: "0.8.0",
+      version: packageInfo.version,
     },
     {
       capabilities: {
