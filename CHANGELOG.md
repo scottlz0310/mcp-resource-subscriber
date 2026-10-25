@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-25
+
 ### Added
 
 - サブコマンド `watch-review-status` を追加（review-raven#144 の案 C、#228）。同じ PC の Squirrel Notifier が公開する `review-status.json`（公開契約 `schemaVersion: 1`）を監視し、起動前から実行中・終了までの進捗を、**状態の変化ごとに 1 行 1 JSON**（`state` / `heartbeat` / `not_received` / `unobservable` / `recovered` / `action_required` / `timeout` / `error`、`terminal` で終了）で出力する。MCP 接続・認証は不要。対象は `--key <owner/repo#N>` と、`--after`（`enqueue_review` の直前の時刻）より後に受信した項目に限り、時刻は**小数秒まで保持して比較する**（同じ秒内の順序を失わない）。静かなまま詰まらないよう、ファイルなし・読めない・更新停止・未受信・手動待ち・タイムアウトを必ず行にする。`finished` はプロセスの終了結果で Verdict ではない。終了コードは完了 0 / 失敗で終了 1 / 引数エラー 2 / 手動待ち 3 / タイムアウト 4。`--timeout-ms` は全体の期限として、ファイルの読み取り（止まった読み取りは中断）・再試行の待ち・監視間隔のすべてを残り時間で制限し、結果を処理する前にも期限を確認する（期限後に届いた `finished` は成功にしない）。既存の `--json` / `--jsonl` / `call` / 認証 / 終了コードは変えない。純粋なロジック（時刻比較・対象の選択）と状態機械は、時計・ファイル読み取り・出力を DI で差し替えたパラメータ化テストで、実ファイルのサブプロセスは CLI テストで固定した。
@@ -266,7 +268,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `src/server/mcpServer.ts` contains a hardcoded version string (bundled test server, not part of the published npm package). This must be updated manually on each version bump. `src/client/probeClient.ts` / `src/client/callClient.ts` resolve their version dynamically from `package.json` as of v0.5.0 and no longer need manual updates.
 
-[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.5.0...v0.6.0

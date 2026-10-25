@@ -37,7 +37,7 @@ export function createProbeServer(deps: ProbeServerDeps): McpServer {
   const server = new McpServer(
     {
       name: "mcp-resource-subscribe-test",
-      version: "0.7.0",
+      version: "0.8.0",
     },
     {
       capabilities: {
