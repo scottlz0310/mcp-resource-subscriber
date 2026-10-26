@@ -10,14 +10,14 @@ Windows / PowerShell 7で、旧`mcp-resource-subscriber`を使っているレビ
 
 今回揃える検証済みの組み合わせは次のとおり。新しい版へ既に移行済みのPCは、ここに合わせてダウングレードせず、その版の移行手順を確認する。
 
-| 対象 | 基準 |
-|---|---|
-| Node.js | 26.10.0以上。今回の実機検証は26.10.0 |
-| 新CLI | `resource-bridge-cli@0.7.0` |
-| Mcp-DockerホストCLI | `mcp-docker 2.31.1` |
-| reviewer skill | `thread-owl-pr-reviewer` rev 22 |
-| reviewed skill | `review-raven-thread-owl-cycle` rev 29 |
-| Squirrel Notifier | 0.19.0 |
+| 対象                | 基準                                   |
+| ------------------- | -------------------------------------- |
+| Node.js             | 26.10.0以上。今回の実機検証は26.10.0   |
+| 新CLI               | `resource-bridge-cli@0.7.0`            |
+| Mcp-DockerホストCLI | `mcp-docker 2.31.1`                    |
+| reviewer skill      | `thread-owl-pr-reviewer` rev 22        |
+| reviewed skill      | `review-raven-thread-owl-cycle` rev 29 |
+| Squirrel Notifier   | 0.19.0                                 |
 
 公開済みの配布元:
 
@@ -244,14 +244,14 @@ timeout・URI/HEAD不一致・認証失敗は完了扱いにしない。原因�
 
 PCごとに次を記録し、各CLI/モデルを未検証のまま一括で成功扱いにしない。
 
-| 項目 | 記録する内容 |
-|---|---|
-| 環境 | PC識別名、OS、Node版、実行パス |
-| 配布 | 新CLI/Mcp-Docker/Squirrel版、agentごとのskill revision |
-| 指示 | 正本の場所、各CLIのリンクと実際の読込み |
+| 項目       | 記録する内容                                                   |
+| ---------- | -------------------------------------------------------------- |
+| 環境       | PC識別名、OS、Node版、実行パス                                 |
+| 配布       | 新CLI/Mcp-Docker/Squirrel版、agentごとのskill revision         |
+| 指示       | 正本の場所、各CLIのリンクと実際の読込み                        |
 | 実レビュー | agent/model、対象PR/HEAD、enqueue reason、独立reviewer起動経路 |
-| 配送 | 同じセッションでのack/URI/status/HEAD一致、thread取得、成否 |
-| 復旧 | 問題・保留理由、切り戻しの有無、backup場所 |
+| 配送       | 同じセッションでのack/URI/status/HEAD一致、thread取得、成否    |
+| 復旧       | 問題・保留理由、切り戻しの有無、backup場所                     |
 
 関連する参照:
 

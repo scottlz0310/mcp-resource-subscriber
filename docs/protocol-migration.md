@@ -23,15 +23,15 @@ saying so.
 
 What the revision changes for this repository:
 
-| Concern | 2025-era | `2026-07-28` |
-|---|---|---|
-| Subscribe | `resources/subscribe` RPC | POST `subscriptions/listen`, URIs in `params.notifications.resourceSubscriptions` |
-| Confirmation | none — the RPC result was the confirmation | `notifications/subscriptions/acknowledged`, carrying the honored URI filter |
-| Update event | `notifications/resources/updated` | unchanged |
-| Re-read | `resources/read` | unchanged |
-| Unsubscribe | `resources/unsubscribe` RPC | close the stream |
-| Session | `Mcp-Session-Id`, stateful | none — stateless, discovery-first |
-| Standalone GET SSE | supported | removed; the reference server answers GET / DELETE with `405` |
+| Concern            | 2025-era                                   | `2026-07-28`                                                                      |
+| ------------------ | ------------------------------------------ | --------------------------------------------------------------------------------- |
+| Subscribe          | `resources/subscribe` RPC                  | POST `subscriptions/listen`, URIs in `params.notifications.resourceSubscriptions` |
+| Confirmation       | none — the RPC result was the confirmation | `notifications/subscriptions/acknowledged`, carrying the honored URI filter       |
+| Update event       | `notifications/resources/updated`          | unchanged                                                                         |
+| Re-read            | `resources/read`                           | unchanged                                                                         |
+| Unsubscribe        | `resources/unsubscribe` RPC                | close the stream                                                                  |
+| Session            | `Mcp-Session-Id`, stateful                 | none — stateless, discovery-first                                                 |
+| Standalone GET SSE | supported                                  | removed; the reference server answers GET / DELETE with `405`                     |
 
 The SDK moved from `@modelcontextprotocol/sdk` 1.30.0 to
 `@modelcontextprotocol/{client,core}` v2 (dependencies) and
@@ -48,17 +48,17 @@ updates in this repository are applied by hand.
 revision — for the endpoints (clients and servers), an older release cannot
 interoperate with anything else in this table. The gateway is not an endpoint:
 it is protocol-independent, so its entry means the release from which the
-transparency contract is *guaranteed by tests*, not the release from which it
+transparency contract is _guaranteed by tests_, not the release from which it
 became compatible.
 
-| Repository | Role | `2026-07-28` since | Latest release | Legacy `initialize` |
-|---|---|---|---|---|
-| [mcp-gateway](https://github.com/scottlz0310/mcp-gateway) | transparent proxy | v0.10.0 (contract guaranteed; older releases unverified, not necessarily incompatible) | v0.10.0 | passed through — permanent regression requirement, alongside `Mcp-Session-Id` |
-| [thread-owl](https://github.com/scottlz0310/thread-owl) | server | v0.4.0 | v0.4.1 | rejected (`legacy: "reject"`) |
-| [review-raven](https://github.com/scottlz0310/review-raven) | server | v0.2.0 (stateless), v0.3.0 (legacy rejected) | v0.3.0 | rejected (`-32022`) |
-| **mcp-resource-subscriber** | client (this repo) | v0.6.0 | v0.6.0 | never offered (pinned) |
-| [squirrel-notifier](https://github.com/scottlz0310/squirrel-notifier) | downstream consumer of this CLI | `main` (PRs [#246](https://github.com/scottlz0310/squirrel-notifier/pull/246) / [#247](https://github.com/scottlz0310/squirrel-notifier/pull/247)) | v0.6.0 (pre-migration) | n/a |
-| [Mcp-Docker](https://github.com/scottlz0310/Mcp-Docker) | integrated E2E environment | — | v2.16.3 | n/a — [#230](https://github.com/scottlz0310/Mcp-Docker/issues/230) open |
+| Repository                                                            | Role                            | `2026-07-28` since                                                                                                                                 | Latest release         | Legacy `initialize`                                                           |
+| --------------------------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------- |
+| [mcp-gateway](https://github.com/scottlz0310/mcp-gateway)             | transparent proxy               | v0.10.0 (contract guaranteed; older releases unverified, not necessarily incompatible)                                                             | v0.10.0                | passed through — permanent regression requirement, alongside `Mcp-Session-Id` |
+| [thread-owl](https://github.com/scottlz0310/thread-owl)               | server                          | v0.4.0                                                                                                                                             | v0.4.1                 | rejected (`legacy: "reject"`)                                                 |
+| [review-raven](https://github.com/scottlz0310/review-raven)           | server                          | v0.2.0 (stateless), v0.3.0 (legacy rejected)                                                                                                       | v0.3.0                 | rejected (`-32022`)                                                           |
+| **mcp-resource-subscriber**                                           | client (this repo)              | v0.6.0                                                                                                                                             | v0.6.0                 | never offered (pinned)                                                        |
+| [squirrel-notifier](https://github.com/scottlz0310/squirrel-notifier) | downstream consumer of this CLI | `main` (PRs [#246](https://github.com/scottlz0310/squirrel-notifier/pull/246) / [#247](https://github.com/scottlz0310/squirrel-notifier/pull/247)) | v0.6.0 (pre-migration) | n/a                                                                           |
+| [Mcp-Docker](https://github.com/scottlz0310/Mcp-Docker)               | integrated E2E environment      | —                                                                                                                                                  | v2.16.3                | n/a — [#230](https://github.com/scottlz0310/Mcp-Docker/issues/230) open       |
 
 Because neither endpoint keeps a fallback, a mismatch between a client and a
 server fails loudly in one of two directions:
@@ -73,7 +73,7 @@ server fails loudly in one of two directions:
 The gateway is transparent by contract, so it never resolves such a mismatch —
 it forwards the failure. That transparency contract (no session minting, no SSE
 buffering, keep-alive comment lines preserved, `MCP-Protocol-Version` and
-`Mcp-Session-Id` forwarded unchanged in both directions for modern *and* legacy
+`Mcp-Session-Id` forwarded unchanged in both directions for modern _and_ legacy
 traffic) is fixed by contract tests in mcp-gateway and specified in its
 `docs/mcp-protocol-transparency.md`. Note that the gateway's `Mcp-Session-Id`
 pass-through is deliberately permanent: it is a regression requirement so the
@@ -89,7 +89,7 @@ The migration was rolled out **gateway → server → client**.
 1. **mcp-gateway** ([#216](https://github.com/scottlz0310/mcp-gateway/issues/216), v0.10.0).
    The gateway only forwards and is protocol-independent, so it was never a
    compatibility blocker. What #216 added was not new-protocol support but
-   *proof*: contract tests pinning the behaviours a long-lived
+   _proof_: contract tests pinning the behaviours a long-lived
    `subscriptions/listen` stream depends on — no SSE buffering, keep-alive
    comment lines preserved, no session minted or required. Doing this first
    meant that when an endpoint later failed, the gateway was already ruled out
@@ -100,7 +100,7 @@ The migration was rolled out **gateway → server → client**.
    v0.2.0; legacy `initialize` rejection in
    [#117](https://github.com/scottlz0310/review-raven/issues/117), v0.3.0).
    For review-raven, statelessness was not a preference: measured against
-   go-sdk v1.7.0, the stateful path leaked three sessions per run *and* fell
+   go-sdk v1.7.0, the stateful path leaked three sessions per run _and_ fell
    back to `2025-11-25`, while the stateless path leaked none and negotiated
    `2026-07-28` correctly.
 3. **Clients** — this repository
@@ -131,8 +131,8 @@ has nothing to retain or remove: it forwards legacy `initialize` and
 requirement rather than a transitional shim. "Legacy removal" below is
 therefore about endpoints only.
 
-#165's completion condition reads: *if a legacy fallback is kept, state its
-targets, deadline, and removal criteria.* The answer here is that none is kept,
+#165's completion condition reads: _if a legacy fallback is kept, state its
+targets, deadline, and removal criteria._ The answer here is that none is kept,
 so there is no deadline to track and nothing left to schedule for removal.
 Concretely, in this repository the following are gone as of v0.6.0 rather than
 deprecated:

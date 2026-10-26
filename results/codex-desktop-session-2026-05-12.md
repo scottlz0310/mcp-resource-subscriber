@@ -73,10 +73,10 @@ subscribe-probe  http://127.0.0.1:8089/mcp  enabled  Unsupported
 
 今回の結果は、次の 2 つの能力を分けて扱う。
 
-| 分類 | 意味 | 今回の Codex |
-| --- | --- | --- |
-| Native capability | Codex 本体が正式に agent へ公開している MCP 操作面で到達できる機能 | Level 3 |
-| Effective capability | 許可済みの shell / SDK / network を使い、agent が実質的に実現できる機能 | Level 7 |
+| 分類                 | 意味                                                                    | 今回の Codex |
+| -------------------- | ----------------------------------------------------------------------- | ------------ |
+| Native capability    | Codex 本体が正式に agent へ公開している MCP 操作面で到達できる機能      | Level 3      |
+| Effective capability | 許可済みの shell / SDK / network を使い、agent が実質的に実現できる機能 | Level 7      |
 
 この区別をしないと、結果を誤読する。
 
@@ -260,8 +260,8 @@ Codex CLI / Desktop の native MCP surface は、今回の検証対象 server �
 
 最終評価:
 
-| 経路 | Level | 説明 |
-| --- | --- | --- |
-| Active Codex Desktop thread after config edit | 0 | 実行中 thread は MCP server 追加を hot-load しなかった |
-| New Codex CLI native MCP surface | 3 | `resources/list` / `resources/read` まで。`resources/subscribe` は未公開 |
-| Agent-driven Node.js MCP SDK workaround | 7 | shell + SDK により protocol-level subscribe と通知後再 read に成功 |
+| 経路                                          | Level | 説明                                                                     |
+| --------------------------------------------- | ----- | ------------------------------------------------------------------------ |
+| Active Codex Desktop thread after config edit | 0     | 実行中 thread は MCP server 追加を hot-load しなかった                   |
+| New Codex CLI native MCP surface              | 3     | `resources/list` / `resources/read` まで。`resources/subscribe` は未公開 |
+| Agent-driven Node.js MCP SDK workaround       | 7     | shell + SDK により protocol-level subscribe と通知後再 read に成功       |

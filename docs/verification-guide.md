@@ -95,16 +95,16 @@ Full support should produce this sequence:
 
 Use these levels when summarizing client behavior:
 
-| Level | Evidence |
-| --- | --- |
-| `0 - no connection` | No `[initialize]` log appears. |
-| `1 - connected` | `[initialize]` appears, but no resource calls appear. |
-| `2 - discovered` | `resources/list` appears. |
-| `3 - read initial resource` | `resources/read` appears with `version=1`. |
-| `4 - subscribed` | `resources/subscribe` appears. |
+| Level                          | Evidence                                                               |
+| ------------------------------ | ---------------------------------------------------------------------- |
+| `0 - no connection`            | No `[initialize]` log appears.                                         |
+| `1 - connected`                | `[initialize]` appears, but no resource calls appear.                  |
+| `2 - discovered`               | `resources/list` appears.                                              |
+| `3 - read initial resource`    | `resources/read` appears with `version=1`.                             |
+| `4 - subscribed`               | `resources/subscribe` appears.                                         |
 | `5 - notification path active` | The server sends `notifications/resources/updated` after subscription. |
-| `6 - re-read after update` | `resources/read` appears again with `version=2`. |
-| `7 - agent context updated` | The agent answer reports `status: reviewed` and `version: 2`. |
+| `6 - re-read after update`     | `resources/read` appears again with `version=2`.                       |
+| `7 - agent context updated`    | The agent answer reports `status: reviewed` and `version: 2`.          |
 
 ## Optional List Changed Test
 

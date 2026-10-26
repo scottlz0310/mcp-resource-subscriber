@@ -16,15 +16,15 @@ Result levels are defined in [`docs/verification-guide.md`](../docs/verification
 
 ## Summary
 
-| Client | Version | OS | Transport | `resources/list` | `resources/read` v1 | `resources/subscribe` | update notification path | re-read v2 | agent context v2 | Level | Notes |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Codex CLI | 0.129.0 | Windows / PowerShell 7 | Streamable HTTP | No | No | No | No | No | No | 1 | Connects and initializes, but no resource methods reached the server. |
-| Gemini CLI | 0.41.2 | Windows | Streamable HTTP | Yes | Yes | No | No | No | No | 3 | Connection and initial read work perfectly. Subscription is not yet supported by the CLI. |
-| OpenCode | 1.14.41 | Windows / PowerShell 7 | Streamable HTTP | No | No | No | No | No | No | 1 | Connects and initializes, but the resource-only MCP server is not exposed because OpenCode reports `Failed to get tools`. |
-| GitHub Copilot CLI | 1.0.43 | Windows 11 / PowerShell 7 | Streamable HTTP (via gateway) | No | No | No | No | No | No | 1 | Connects and initializes. Resource-only server provides no tools; no resource calls reach the server. Requires gateway routing because direct HTTP MCP servers require OAuth. |
-| Claude Code | 2.1.133 | Windows / PowerShell 7 | Streamable HTTP | Yes | Yes | No | No | No | No | 3 | Built-in `ListMcpResourcesTool` / `ReadMcpResourceTool` work over Streamable HTTP. Claude Code exposes no `resources/subscribe` tool to the agent. |
-| Goose | 1.33.1 | Windows / PowerShell 7 | Streamable HTTP | Yes | Yes | No | No | No | No | 3 | `extensionmanager` extension provides `list_resources` / `read_resource` but no subscribe tool. |
-| Crush | v0.66.0 | Windows / PowerShell 7 | Streamable HTTP | No | No | No | No | No | No | 1 | Connects and initializes, but the resource-only MCP server is not exposed because Crush reports `Error listing tools: Method not found`. |
+| Client             | Version | OS                        | Transport                     | `resources/list` | `resources/read` v1 | `resources/subscribe` | update notification path | re-read v2 | agent context v2 | Level | Notes                                                                                                                                                                         |
+| ------------------ | ------- | ------------------------- | ----------------------------- | ---------------- | ------------------- | --------------------- | ------------------------ | ---------- | ---------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Codex CLI          | 0.129.0 | Windows / PowerShell 7    | Streamable HTTP               | No               | No                  | No                    | No                       | No         | No               | 1     | Connects and initializes, but no resource methods reached the server.                                                                                                         |
+| Gemini CLI         | 0.41.2  | Windows                   | Streamable HTTP               | Yes              | Yes                 | No                    | No                       | No         | No               | 3     | Connection and initial read work perfectly. Subscription is not yet supported by the CLI.                                                                                     |
+| OpenCode           | 1.14.41 | Windows / PowerShell 7    | Streamable HTTP               | No               | No                  | No                    | No                       | No         | No               | 1     | Connects and initializes, but the resource-only MCP server is not exposed because OpenCode reports `Failed to get tools`.                                                     |
+| GitHub Copilot CLI | 1.0.43  | Windows 11 / PowerShell 7 | Streamable HTTP (via gateway) | No               | No                  | No                    | No                       | No         | No               | 1     | Connects and initializes. Resource-only server provides no tools; no resource calls reach the server. Requires gateway routing because direct HTTP MCP servers require OAuth. |
+| Claude Code        | 2.1.133 | Windows / PowerShell 7    | Streamable HTTP               | Yes              | Yes                 | No                    | No                       | No         | No               | 3     | Built-in `ListMcpResourcesTool` / `ReadMcpResourceTool` work over Streamable HTTP. Claude Code exposes no `resources/subscribe` tool to the agent.                            |
+| Goose              | 1.33.1  | Windows / PowerShell 7    | Streamable HTTP               | Yes              | Yes                 | No                    | No                       | No         | No               | 3     | `extensionmanager` extension provides `list_resources` / `read_resource` but no subscribe tool.                                                                               |
+| Crush              | v0.66.0 | Windows / PowerShell 7    | Streamable HTTP               | No               | No                  | No                    | No                       | No         | No               | 1     | Connects and initializes, but the resource-only MCP server is not exposed because Crush reports `Error listing tools: Method not found`.                                      |
 
 ## Codex CLI
 
@@ -92,6 +92,7 @@ If the server supports resource subscription, subscribe to test://review/status 
 After the notification, read test://review/status again.
 Report the final status, version, and message.
 ```
+
 - Result level: `3 - read initial resource`
 - Does it call `resources/list`? Yes. `list_mcp_resources` returned the resource.
 - Does it call `resources/read`? Yes. `read_mcp_resource` returned `version: 1`.
@@ -105,6 +106,7 @@ Report the final status, version, and message.
 [resources/list] requested
 [resources/read] uri=test://review/status version=1
 ```
+
 - Notes: Gemini CLI successfully discovers and reads resources over Streamable HTTP, but currently lacks the `resources/subscribe` capability.
 
 ## OpenCode

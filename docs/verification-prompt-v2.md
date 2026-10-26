@@ -109,16 +109,16 @@ docker compose logs -f
 
 ## Result Levels
 
-| Level | Evidence |
-| --- | --- |
-| `0 - no connection` | No `[initialize]` log. |
-| `1 - connected` | `[initialize]` appears and no `resources/*` methods appear. Optional tool discovery or `[tools/call]` activity still counts as Level 1 when no resource methods are exercised. |
-| `2 - discovered` | `[resources/list]` appears. |
-| `3 - read initial resource` | `[resources/read]` with `version=1`. |
-| `4 - subscribed` | `[resources/subscribe]` appears. |
-| `5 - notification path active` | Server sends `notifications/resources/updated`. |
-| `6 - re-read after update` | `[resources/read]` with `version=2`. |
-| `7 - agent context updated` | Agent reports `status: reviewed` and `version: 2`. |
+| Level                          | Evidence                                                                                                                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `0 - no connection`            | No `[initialize]` log.                                                                                                                                                         |
+| `1 - connected`                | `[initialize]` appears and no `resources/*` methods appear. Optional tool discovery or `[tools/call]` activity still counts as Level 1 when no resource methods are exercised. |
+| `2 - discovered`               | `[resources/list]` appears.                                                                                                                                                    |
+| `3 - read initial resource`    | `[resources/read]` with `version=1`.                                                                                                                                           |
+| `4 - subscribed`               | `[resources/subscribe]` appears.                                                                                                                                               |
+| `5 - notification path active` | Server sends `notifications/resources/updated`.                                                                                                                                |
+| `6 - re-read after update`     | `[resources/read]` with `version=2`.                                                                                                                                           |
+| `7 - agent context updated`    | Agent reports `status: reviewed` and `version: 2`.                                                                                                                             |
 
 ---
 
@@ -126,11 +126,11 @@ docker compose logs -f
 
 Only clients that reached Level 1 in Round 1 due to the resource-only server issue:
 
-| Client | Round 1 root cause | Expected improvement |
-| --- | --- | --- |
-| Codex CLI | No tool surface for agent | tools/list should now return get_review_status |
-| OpenCode | tools/list -> "Failed to get tools" | tools/list should succeed |
-| Crush | tools/list -> "Method not found" | tools/list should succeed |
-| GitHub Copilot CLI | No tool surface for agent | tools/list should return get_review_status; resource subscription likely still inaccessible via agent interface |
+| Client             | Round 1 root cause                  | Expected improvement                                                                                            |
+| ------------------ | ----------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Codex CLI          | No tool surface for agent           | tools/list should now return get_review_status                                                                  |
+| OpenCode           | tools/list -> "Failed to get tools" | tools/list should succeed                                                                                       |
+| Crush              | tools/list -> "Method not found"    | tools/list should succeed                                                                                       |
+| GitHub Copilot CLI | No tool surface for agent           | tools/list should return get_review_status; resource subscription likely still inaccessible via agent interface |
 
 Results go in: `results/compatibility-matrix-v2.md`

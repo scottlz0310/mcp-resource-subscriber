@@ -8,7 +8,7 @@
 > steps below against the current server will fail. See the README's
 > [Expected Client Behavior](../README.md#expected-client-behavior) for the flow in use today.
 
-This guide covers the **second round** of compatibility verification, using a server that exposes both resources *and* a tool.
+This guide covers the **second round** of compatibility verification, using a server that exposes both resources _and_ a tool.
 
 Round 1 results (resource-only server) are in [`results/compatibility-matrix.md`](../results/compatibility-matrix.md) and remain valid as a baseline.
 
@@ -16,20 +16,20 @@ Round 1 results (resource-only server) are in [`results/compatibility-matrix.md`
 
 In Round 1, several clients reached only Level 1 because the MCP server exposed no tools:
 
-| Client | Round 1 result | Root cause |
-| --- | --- | --- |
-| Codex CLI | 1 - connected | Resource-only server; no tool surface for the agent |
-| OpenCode | 1 - connected | `tools/list` -> "Failed to get tools"; server hidden from agent |
-| Crush | 1 - connected | `tools/list` -> "Method not found"; server hidden from agent |
-| GitHub Copilot CLI | 1 - connected | Resource-only server; no tool surface for the agent |
+| Client             | Round 1 result | Root cause                                                      |
+| ------------------ | -------------- | --------------------------------------------------------------- |
+| Codex CLI          | 1 - connected  | Resource-only server; no tool surface for the agent             |
+| OpenCode           | 1 - connected  | `tools/list` -> "Failed to get tools"; server hidden from agent |
+| Crush              | 1 - connected  | `tools/list` -> "Method not found"; server hidden from agent    |
+| GitHub Copilot CLI | 1 - connected  | Resource-only server; no tool surface for the agent             |
 
 Round 2 adds `get_review_status` to the server so that `tools/list` returns a non-empty response.
 This removes the error-on-tools-list blocker and allows deeper resource behavior to be observed.
 
 ## New Tool
 
-| Tool name | Description |
-| --- | --- |
+| Tool name           | Description                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------------- |
 | `get_review_status` | Returns the current review status. Same content as `resources/read test://review/status`. |
 
 The tool logs `[tools/call] get_review_status` in the server log.
@@ -118,16 +118,16 @@ Same resource-based progression as Round 1. Round 2 tool discovery and tool call
 confirm the tool surface, but do not raise the result level unless a resource method
 appears in the server log.
 
-| Level | Evidence |
-| --- | --- |
-| `0 - no connection` | No `[initialize]` log. |
-| `1 - connected` | `[initialize]` appears and no `resources/*` methods appear. Optional tool discovery or `[tools/call]` activity still counts as Level 1 when no resource methods are exercised. |
-| `2 - discovered` | `[resources/list]` appears. |
-| `3 - read initial resource` | `[resources/read]` with `version=1`. |
-| `4 - subscribed` | `[resources/subscribe]` appears. |
-| `5 - notification path active` | Server sends `notifications/resources/updated`. |
-| `6 - re-read after update` | `[resources/read]` with `version=2`. |
-| `7 - agent context updated` | Agent reports `status: reviewed` and `version: 2`. |
+| Level                          | Evidence                                                                                                                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `0 - no connection`            | No `[initialize]` log.                                                                                                                                                         |
+| `1 - connected`                | `[initialize]` appears and no `resources/*` methods appear. Optional tool discovery or `[tools/call]` activity still counts as Level 1 when no resource methods are exercised. |
+| `2 - discovered`               | `[resources/list]` appears.                                                                                                                                                    |
+| `3 - read initial resource`    | `[resources/read]` with `version=1`.                                                                                                                                           |
+| `4 - subscribed`               | `[resources/subscribe]` appears.                                                                                                                                               |
+| `5 - notification path active` | Server sends `notifications/resources/updated`.                                                                                                                                |
+| `6 - re-read after update`     | `[resources/read]` with `version=2`.                                                                                                                                           |
+| `7 - agent context updated`    | Agent reports `status: reviewed` and `version: 2`.                                                                                                                             |
 
 ## What To Record
 

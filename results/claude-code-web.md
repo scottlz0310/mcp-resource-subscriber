@@ -24,10 +24,10 @@ Result levels are defined in [`docs/verification-guide-v2.md`](../docs/verificat
 
 ## Summary
 
-| Verification mode | Round 2 Level | `tools/list` OK | `resources/list` | `resources/subscribe` | Notification received |
-| --- | --- | --- | --- | --- | --- |
-| Native MCP client (MCP server configured in settings) | 1 - connected | YES (via tool surface) | NO | NO | NO |
-| Manual execution via Bash/curl | 7 - agent context updated | YES | YES | YES | YES |
+| Verification mode                                     | Round 2 Level             | `tools/list` OK        | `resources/list` | `resources/subscribe` | Notification received |
+| ----------------------------------------------------- | ------------------------- | ---------------------- | ---------------- | --------------------- | --------------------- |
+| Native MCP client (MCP server configured in settings) | 1 - connected             | YES (via tool surface) | NO               | NO                    | NO                    |
+| Manual execution via Bash/curl                        | 7 - agent context updated | YES                    | YES              | YES                   | YES                   |
 
 **Key finding:** Claude Code web exposes MCP server tools to the agent via the tool surface (`mcp__<server>__<tool>`), but does not natively expose raw resource methods (`resources/list`, `resources/read`, `resources/subscribe`) as agent-accessible primitives. When the agent drives the protocol manually via Bash/curl, the full Level 7 flow is achievable. A GitHub-specific subscription mechanism (`mcp__github__subscribe_pr_activity`) exists as a parallel capability but operates via webhook, not generic MCP `resources/subscribe`.
 
@@ -182,14 +182,14 @@ This makes Claude Code web a Level 7 client when the agent actively drives the p
 
 ### Comparison with Round 1 / Round 2 findings
 
-| Client | Round 1 | Round 2 | Mode |
-| --- | --- | --- | --- |
-| Claude Code (web) — native | not previously tested | 1 | native MCP client |
-| Claude Code (web) — manual | not previously tested | 7 | agent-driven Bash/curl |
-| Codex CLI | 1 | 3 | native |
-| OpenCode | 1 | 1 | native |
-| Crush | 1 | 3 | native |
-| GitHub Copilot CLI | 1 | 1 | native |
+| Client                     | Round 1               | Round 2 | Mode                   |
+| -------------------------- | --------------------- | ------- | ---------------------- |
+| Claude Code (web) — native | not previously tested | 1       | native MCP client      |
+| Claude Code (web) — manual | not previously tested | 7       | agent-driven Bash/curl |
+| Codex CLI                  | 1                     | 3       | native                 |
+| OpenCode                   | 1                     | 1       | native                 |
+| Crush                      | 1                     | 3       | native                 |
+| GitHub Copilot CLI         | 1                     | 1       | native                 |
 
 ### Session-specific observation: PR activity subscription
 
