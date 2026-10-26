@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Biome を 2.6.3 へ更新して設定を移行し、Markdown・YAML を新しい整形に合わせた。lefthook の対象を biome.json とそろえ、pre-push で全体の lint・型検査・build・coverage テストを実行する。
+
 - prepare・draft・配布 tarball の検証・npm 公開/再取得確認・finalize を release-automate の固定 SHA へ統一した。Trusted Publishing は既存の publish.yml から継続し、CHANGELOG 本文と共通の検証証跡を Release に使う。タグ起点の直接公開と自動生成ノートの併記を廃止し、手動実行は非公開の検証に限定する。
 
 - テスト用 MCP サーバーの自己申告バージョンを `package.json` から導出し、リリース準備時の版の二重更新を不要にした。コンパイル後も JSON 原稿を参照し、公開 CLI の配布範囲は維持する。

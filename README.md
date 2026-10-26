@@ -34,17 +34,17 @@ CLIをMCPサーバーとして登録せず、シェルから呼び出してく�
 
 購読URIは `--uri` または `MCP_PROBE_URI` で明示します。テスト用の既定URIはありません。未指定・空文字は通信前に `RESOURCE_URI_REQUIRED`、終了コード1で失敗します。
 
-| オプション | 用途・環境変数 |
-|---|---|
-| `--url <url>` | Streamable HTTP endpoint。`MCP_PROBE_URL` でも指定可能 |
-| `--uri <uri>` | 購読URI。`MCP_PROBE_URI` でも指定可能 |
-| `--timeout-ms <ms>` | タイムアウト。既定15000。`MCP_PROBE_TIMEOUT_MS` |
-| `--json` | stdoutに単一JSON。診断・警告はstderr |
-| `--jsonl` / `--until <pointer>=<json>` | 更新を1行1JSONで逐次出力し、条件一致まで終了しない。[逐次出力](#逐次出力--jsonl)を参照 |
-| `--skip-resource-list-check` | 一覧に載らない動的resourceの `resources/list` 確認を省略。`MCP_PROBE_SKIP_LIST_CHECK=true` |
-| `--auth-token <tok>` | 明示Bearer token。露出を避けるため `MCP_PROBE_AUTH_TOKEN` を推奨 |
-| `--login` / `--logout` | Gatewayへの対話ログイン／指定originのキャッシュ削除 |
-| `--version`, `-v` / `--help`, `-h` | バージョン／使用方法の表示 |
+| オプション                             | 用途・環境変数                                                                             |
+| -------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `--url <url>`                          | Streamable HTTP endpoint。`MCP_PROBE_URL` でも指定可能                                     |
+| `--uri <uri>`                          | 購読URI。`MCP_PROBE_URI` でも指定可能                                                      |
+| `--timeout-ms <ms>`                    | タイムアウト。既定15000。`MCP_PROBE_TIMEOUT_MS`                                            |
+| `--json`                               | stdoutに単一JSON。診断・警告はstderr                                                       |
+| `--jsonl` / `--until <pointer>=<json>` | 更新を1行1JSONで逐次出力し、条件一致まで終了しない。[逐次出力](#逐次出力--jsonl)を参照     |
+| `--skip-resource-list-check`           | 一覧に載らない動的resourceの `resources/list` 確認を省略。`MCP_PROBE_SKIP_LIST_CHECK=true` |
+| `--auth-token <tok>`                   | 明示Bearer token。露出を避けるため `MCP_PROBE_AUTH_TOKEN` を推奨                           |
+| `--login` / `--logout`                 | Gatewayへの対話ログイン／指定originのキャッシュ削除                                        |
+| `--version`, `-v` / `--help`, `-h`     | バージョン／使用方法の表示                                                                 |
 
 購読は成功0、失敗1で終了します。通知を受けて再readする `subscription` と、listen後のreadで既完了を検出する `pre-completion` の両方を扱います。`recommended_next_action=POLL_AFTER` は非終端状態なので同じstreamで通知待機を続けます。
 
@@ -100,19 +100,19 @@ phase-summary route=subscription url=<url> uri=<uri>
 
 最終本文に `recommended_next_action` があればその行も出力します。失敗時のJSONも同じフィールドを持ち、`errorCode` に原因を返します。
 
-| エラー | 原因 |
-|---|---|
-| `SERVER_URL_UNKNOWN` / `RESOURCE_URI_REQUIRED` | URL／購読URIの未指定 |
-| `RESOURCE_NOT_FOUND` | 一覧確認で対象URIが見つからない |
-| `NOTIFICATION_TIMEOUT` | 上限内に終端更新を受信できない |
-| `SUBSCRIPTION_NOT_HONORED` | ackで要求URIが受理されていない |
-| `SUBSCRIPTION_DISCONNECTED` / `SUBSCRIPTION_CLOSED` | streamの異常切断／サーバーによる終了 |
-| `PROTOCOL_UNSUPPORTED` | 採用protocolに非対応 |
-| `TLS_CERT_UNTRUSTED` | TLS証明書を信頼できない。`NODE_EXTRA_CA_CERTS` または `NODE_USE_SYSTEM_CA=1` を確認 |
-| `DNS_LOOKUP_FAILED` / `CONNECTION_REFUSED` | 名前解決失敗／接続拒否 |
-| `AUTH_LOGIN_REQUIRED` / `AUTH_TIMEOUT` / `AUTH_REFRESH_FAILED` | 再ログインが必要／認証処理の上限超過／一時的なrefresh失敗 |
-| `UNTIL_REQUIRED` / `INVALID_ARGS` | `--jsonl` で `--until` が未指定／`--until` の書式不正・`--json` との併用・`--jsonl` なしの `--until`（いずれも通信前に失敗） |
-| `INTERNAL_ERROR` | 引数不正、または上記に分類されない失敗 |
+| エラー                                                         | 原因                                                                                                                         |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `SERVER_URL_UNKNOWN` / `RESOURCE_URI_REQUIRED`                 | URL／購読URIの未指定                                                                                                         |
+| `RESOURCE_NOT_FOUND`                                           | 一覧確認で対象URIが見つからない                                                                                              |
+| `NOTIFICATION_TIMEOUT`                                         | 上限内に終端更新を受信できない                                                                                               |
+| `SUBSCRIPTION_NOT_HONORED`                                     | ackで要求URIが受理されていない                                                                                               |
+| `SUBSCRIPTION_DISCONNECTED` / `SUBSCRIPTION_CLOSED`            | streamの異常切断／サーバーによる終了                                                                                         |
+| `PROTOCOL_UNSUPPORTED`                                         | 採用protocolに非対応                                                                                                         |
+| `TLS_CERT_UNTRUSTED`                                           | TLS証明書を信頼できない。`NODE_EXTRA_CA_CERTS` または `NODE_USE_SYSTEM_CA=1` を確認                                          |
+| `DNS_LOOKUP_FAILED` / `CONNECTION_REFUSED`                     | 名前解決失敗／接続拒否                                                                                                       |
+| `AUTH_LOGIN_REQUIRED` / `AUTH_TIMEOUT` / `AUTH_REFRESH_FAILED` | 再ログインが必要／認証処理の上限超過／一時的なrefresh失敗                                                                    |
+| `UNTIL_REQUIRED` / `INVALID_ARGS`                              | `--jsonl` で `--until` が未指定／`--until` の書式不正・`--json` との併用・`--jsonl` なしの `--until`（いずれも通信前に失敗） |
+| `INTERNAL_ERROR`                                               | 引数不正、または上記に分類されない失敗                                                                                       |
 
 ## 逐次出力（`--jsonl`）
 
@@ -124,12 +124,11 @@ resource-bridge-cli   --url https://gateway.example/mcp/review-raven   --uri rev
 
 stdoutに1行1JSONを、受信の都度flushして出力します。診断・警告はstderr。各行は `schemaVersion: 1` を持ち、既存の版の項目は変更しません。
 
-| `type` | 出力されるとき | 主な項目 |
-|---|---|---|
-| `ack` | listenのackとURI受理を検証した直後 | `resourceUri`、`honoredUris` |
-| `snapshot` | ack後の現在値read（`source: "post-listen"`）と、通知を受けた後のread（`"notification"`）ごと | `notificationUri`、`text`（本文そのまま）、`json`（JSONとして解釈できなければnull）、`matched` |
-| `end` | 終了時（1回） | `reason`（`until-matched` / `error`）、`closeReason`、`errorCode`、`notificationCount`、`recommendedNextAction` |
-
+| `type`     | 出力されるとき                                                                               | 主な項目                                                                                                        |
+| ---------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `ack`      | listenのackとURI受理を検証した直後                                                           | `resourceUri`、`honoredUris`                                                                                    |
+| `snapshot` | ack後の現在値read（`source: "post-listen"`）と、通知を受けた後のread（`"notification"`）ごと | `notificationUri`、`text`（本文そのまま）、`json`（JSONとして解釈できなければnull）、`matched`                  |
+| `end`      | 終了時（1回）                                                                                | `reason`（`until-matched` / `error`）、`closeReason`、`errorCode`、`notificationCount`、`recommendedNextAction` |
 - **終了条件** `--until <JSON Pointer>=<JSON値>` は `--jsonl` で必須です。`json` の [RFC 6901](https://datatracker.ietf.org/doc/html/rfc6901) Pointerの値がJSON値と一致（深い等価）したsnapshotで終了します。文字列は `--until /kind=approved` のように引用します。最初の `=` でPointerと値を分けます。本文がJSONでない・Pointerが存在しない場合は不一致として待機を続けます。CLIはPR・HEAD・Verdictを解釈せず、`--until` の機械的な一致だけを見ます。
 - **終了コード** 条件一致は0、それ以外（timeout・切断・引数不正・通信失敗）は1。失敗時も `end` 行（`reason: "error"`、`errorCode`）を出力します。`--timeout-ms` は接続・一覧確認・各readを含む全体の予算で、予算を超えたreadは一致する値であっても成功にせず `NOTIFICATION_TIMEOUT` で終了します。timeoutや切断を成功扱いにせず、再enqueueなどの自動復旧もしません。
 - **既完了** listen前に結果が確定していても、ack後の現在値readで検出して即終了します。通知の取りこぼしは履歴再生ではなく、最新のsnapshotで補います。
@@ -159,15 +158,15 @@ resource-bridge-cli watch-review-status --key scottlz0310/review-raven#158 --aft
 
 stdout に 1 行 1 JSON を出します（`schemaVersion: 1`、`type`、`key`、`at`）。`"terminal": true` の行が最後で、プロセスはそこで終了します。
 
-| `type` | 出力されるとき | 主な項目 |
-|---|---|---|
-| `state` | 対象の `(state, holdReason, round, queuePosition)` が変わったとき | `state`（`waiting` / `running` / `finished`）、`holdReason`（`ciPending` / `busy` / `manual` / `autoPause`）、`detail`。`finished` は `outcome`・`exitCode` を持ち、terminal |
-| `heartbeat` | 何も出さないまま `--heartbeat-ms` 経過したとき | `state`、`elapsedMs`。生存確認 |
-| `not_received` | 対象の項目が `--not-received-ms` 経っても現れないとき（1 回） | `waitedMs`、`previousRound`（前の round が残っているとき） |
-| `unobservable` | ファイルが無い／読めない／非対応の `schemaVersion`／`updatedAt` が `--stale-ms` より古い | `reason`（`no_file` / `unreadable` / `unsupported_schema` / `stale`）、`ageMs`。回復したら `recovered` |
-| `action_required` | `holdReason = manual`（利用者の操作待ち） | 「レビューする」か別 CLI での起動の案内。terminal |
-| `timeout` | `--timeout-ms` に達したとき | `elapsedMs`。terminal |
-| `error` | 引数エラー | `errorCode`（`INVALID_ARGUMENT`）、`message`。terminal |
+| `type`            | 出力されるとき                                                                           | 主な項目                                                                                                                                                                     |
+| ----------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `state`           | 対象の `(state, holdReason, round, queuePosition)` が変わったとき                        | `state`（`waiting` / `running` / `finished`）、`holdReason`（`ciPending` / `busy` / `manual` / `autoPause`）、`detail`。`finished` は `outcome`・`exitCode` を持ち、terminal |
+| `heartbeat`       | 何も出さないまま `--heartbeat-ms` 経過したとき                                           | `state`、`elapsedMs`。生存確認                                                                                                                                               |
+| `not_received`    | 対象の項目が `--not-received-ms` 経っても現れないとき（1 回）                            | `waitedMs`、`previousRound`（前の round が残っているとき）                                                                                                                   |
+| `unobservable`    | ファイルが無い／読めない／非対応の `schemaVersion`／`updatedAt` が `--stale-ms` より古い | `reason`（`no_file` / `unreadable` / `unsupported_schema` / `stale`）、`ageMs`。回復したら `recovered`                                                                       |
+| `action_required` | `holdReason = manual`（利用者の操作待ち）                                                | 「レビューする」か別 CLI での起動の案内。terminal                                                                                                                            |
+| `timeout`         | `--timeout-ms` に達したとき                                                              | `elapsedMs`。terminal                                                                                                                                                        |
+| `error`           | 引数エラー                                                                               | `errorCode`（`INVALID_ARGUMENT`）、`message`。terminal                                                                                                                       |
 
 **終了コード:** 完了 0 / reviewer の失敗で終了 1 / 引数エラー 2 / 手動待ち 3 / タイムアウト 4。
 
@@ -189,12 +188,12 @@ resource-bridge-cli call \
 
 `call` は `initialize` → `tools/call` → 結果出力で終了します。`--uri` は不要です。`--args` はJSON objectで、既定は `{}`。認証・URL・timeoutは購読と共通です。
 
-| 終了コード | 意味 |
-|---|---|
-| 0 | 成功 |
-| 1 | toolが実行され `isError: true` を返した |
-| 2 | 認証失敗 |
-| 3 | 通信・引数・protocol失敗。未知toolや引数のサーバー拒否は `TOOL_REQUEST_REJECTED` |
+| 終了コード | 意味                                                                             |
+| ---------- | -------------------------------------------------------------------------------- |
+| 0          | 成功                                                                             |
+| 1          | toolが実行され `isError: true` を返した                                          |
+| 2          | 認証失敗                                                                         |
+| 3          | 通信・引数・protocol失敗。未知toolや引数のサーバー拒否は `TOOL_REQUEST_REJECTED` |
 
 ```json
 {
@@ -202,7 +201,7 @@ resource-bridge-cli call \
   "tool": "enqueue_review",
   "isError": false,
   "errorCode": null,
-  "content": [{"type":"text","text":"..."}],
+  "content": [{ "type": "text", "text": "..." }],
   "recommendedNextAction": null
 }
 ```
@@ -222,11 +221,11 @@ refresh時のロック待機・discovery・ネットワーク呼び出しも `--
 
 **名称変更後も保存先・形式・既存client_idは維持します。** tokenを複製・初期化せず、改名だけで再ログインを要求しません。既存の `MCP_PROBE_*` は引き続き使用します。
 
-| OS | 既存の保存先 |
-|---|---|
-| Windows | `%LOCALAPPDATA%\mcp-resource-subscriber\tokens.db` |
-| macOS | `~/Library/Application Support/mcp-resource-subscriber/tokens.db` |
-| Linux | `$XDG_STATE_HOME/mcp-resource-subscriber/tokens.db`。未設定は `~/.local/state/...` |
+| OS      | 既存の保存先                                                                       |
+| ------- | ---------------------------------------------------------------------------------- |
+| Windows | `%LOCALAPPDATA%\mcp-resource-subscriber\tokens.db`                                 |
+| macOS   | `~/Library/Application Support/mcp-resource-subscriber/tokens.db`                  |
+| Linux   | `$XDG_STATE_HOME/mcp-resource-subscriber/tokens.db`。未設定は `~/.local/state/...` |
 
 上書きは `MCP_PROBE_TOKEN_STORE_PATH`。token・Authorization・cookieなどの生の値をログや公開証跡へ載せないでください。
 
@@ -254,11 +253,11 @@ node dist/src/client/cli.js --url http://127.0.0.1:8089/mcp --uri test://review/
 
 `pnpm run start` はビルド済みfixtureの起動です。CIでも `docker build .` を検証します。
 
-| fixture環境変数 | 既定 |
-|---|---|
-| `MCP_TEST_PORT` / `MCP_TEST_PATH` | `8089` / `/mcp`（`/mcp` は常に登録） |
-| `MCP_TEST_UPDATE_DELAY_SECONDS` | `5`。テストは `0.05` |
-| `MCP_TEST_INITIAL_STATUS` / `MCP_TEST_UPDATED_STATUS` | `pending` / `reviewed` |
-| `MCP_TEST_SEND_LIST_CHANGED` / `MCP_TEST_LOG_LEVEL` | `false` / `debug` |
+| fixture環境変数                                       | 既定                                 |
+| ----------------------------------------------------- | ------------------------------------ |
+| `MCP_TEST_PORT` / `MCP_TEST_PATH`                     | `8089` / `/mcp`（`/mcp` は常に登録） |
+| `MCP_TEST_UPDATE_DELAY_SECONDS`                       | `5`。テストは `0.05`                 |
+| `MCP_TEST_INITIAL_STATUS` / `MCP_TEST_UPDATED_STATUS` | `pending` / `reviewed`               |
+| `MCP_TEST_SEND_LIST_CHANGED` / `MCP_TEST_LOG_LEVEL`   | `false` / `debug`                    |
 
 過去の互換性検証結果は [results/](results/) に保持します。[検証ガイド](docs/verification-guide-v2.md)と [旧レビューskillテンプレート](docs/skills/pr-review-subscribe/SKILL.md)は初期検証の履歴です。現行のレビュー運用skillはMcp-Dockerが管理します。protocol移行の履歴・責務は [protocol-migration.md](docs/protocol-migration.md)を参照してください。

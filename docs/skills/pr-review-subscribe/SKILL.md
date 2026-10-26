@@ -1,4 +1,5 @@
 ---
+
 name: pr-review-subscribe
 description: PR review cycle with provider-agnostic Unified Review Thread Handling. Supports multiple acquisition providers — copilot-review (MCP watch/subscribe), codex (@codex mention), external/human (user-signaled), or existing threads. Thread collection, classification, fixing, reply, and resolve are unified across all providers. Re-review uses structured loops for copilot-review and message-based requests for others. Use immediately after creating a PR, requesting any review, after a reviewer posts threads, or when the user asks to process PR review comments. Never merge autonomously.
 ---
@@ -26,11 +27,11 @@ If server/tool names differ, load `references/tool-template.md` and map placehol
 
 ## Required Surfaces
 
-| Placeholder | Purpose | When used |
-| --- | --- | --- |
-| `{CRM}` | Copilot review MCP tools: review status, request, watch start/cancel | copilot-review acquisition only |
-| `{GH}` | GitHub issue/PR comment tools | All providers |
-| `{RSRC}` | MCP resource operations: subscribe/read/unsubscribe or SDK wrapper | copilot-review acquisition only |
+| Placeholder | Purpose                                                              | When used                       |
+| ----------- | -------------------------------------------------------------------- | ------------------------------- |
+| `{CRM}`     | Copilot review MCP tools: review status, request, watch start/cancel | copilot-review acquisition only |
+| `{GH}`      | GitHub issue/PR comment tools                                        | All providers                   |
+| `{RSRC}`    | MCP resource operations: subscribe/read/unsubscribe or SDK wrapper   | copilot-review acquisition only |
 
 **copilot-review acquisition** minimum operations:
 
@@ -93,9 +94,11 @@ Phase 1S detail (copilot-review acquisition):
    **a. Explicit specification** (highest priority): if the user specified a provider (`copilot-review`, `codex`, `external`, `existing`), use it and jump to the corresponding step below.
 
    **b. Auto — existing threads detected**: run:
+
    ```bash
    gh pr view <pr> --repo <owner>/<repo> --json latestReviews
    ```
+
    If any entry has `state = COMMENTED | CHANGES_REQUESTED | APPROVED`, set `provider = existing` and go to **Phase U1**.
 
    **c. Auto — {CRM} available**: if `{CRM}` tools (e.g., `mcp__copilot-review__*`) are present in the session's available tool list, set `provider = copilot-review` and proceed to steps 3–6.
@@ -104,7 +107,7 @@ Phase 1S detail (copilot-review acquisition):
 
    **e. Auto — fallback**: set `provider = external` and go to **Phase W**.
 
-3. *(copilot-review only)* Call `{CRM}:get_copilot_review_status`.
+3. _(copilot-review only)_ Call `{CRM}:get_copilot_review_status`.
 4. If `status = COMPLETED` or `BLOCKED`, go to **Phase U1**.
 5. If `status = NOT_REQUESTED`, call `{CRM}:request_copilot_review`, then go to **Phase 1S**.
 6. If `status = PENDING` or `IN_PROGRESS`, go to **Phase 1S**.
@@ -171,13 +174,13 @@ recommended_next_action=READ_REVIEW_THREADS
 
 Action table:
 
-| recommended_next_action | Next step |
-| --- | --- |
-| `READ_REVIEW_THREADS` | Phase U1 |
-| `POLL_AFTER` | Keep the subscription open and wait for the next update |
-| `CHECK_FAILURE` | Report the error and stop |
-| `REAUTH_AND_START_NEW_WATCH` | Ask the user to re-authenticate and stop |
-| `START_NEW_WATCH` | Unsubscribe if needed, then return to Phase 1S-A |
+| recommended_next_action      | Next step                                               |
+| ---------------------------- | ------------------------------------------------------- |
+| `READ_REVIEW_THREADS`        | Phase U1                                                |
+| `POLL_AFTER`                 | Keep the subscription open and wait for the next update |
+| `CHECK_FAILURE`              | Report the error and stop                               |
+| `REAUTH_AND_START_NEW_WATCH` | Ask the user to re-authenticate and stop                |
+| `START_NEW_WATCH`            | Unsubscribe if needed, then return to Phase 1S-A        |
 
 Do not poll while subscription is healthy. A periodic read without a notification is allowed only as a liveness check after a long quiet period, not as the main signal.
 
@@ -217,7 +220,6 @@ pnpm dlx mcp-resource-subscriber \
 > Pin a specific release with `mcp-resource-subscriber@<version>` to ensure reproducibility.
 > When testing unreleased local changes, use `node dist/src/client/cli.js` instead
 > (requires `pnpm install --frozen-lockfile && pnpm run build` first).
-
 3. The wrapper must:
    - Connect to the MCP server
    - Subscribe to `resource_uri`
@@ -342,11 +344,11 @@ gh api graphql -f query='
 
 Classify each unresolved comment:
 
-| Class | Criteria |
-| --- | --- |
-| `blocking` | Runtime failure, data corruption, security risk, broken behavior, inconsistent published record |
-| `non-blocking` | Useful quality, logging, test, privacy, or consistency improvement |
-| `suggestion` | Naming, structure, style, or maintainability suggestion |
+| Class          | Criteria                                                                                        |
+| -------------- | ----------------------------------------------------------------------------------------------- |
+| `blocking`     | Runtime failure, data corruption, security risk, broken behavior, inconsistent published record |
+| `non-blocking` | Useful quality, logging, test, privacy, or consistency improvement                              |
+| `suggestion`   | Naming, structure, style, or maintainability suggestion                                         |
 
 Decide `accept` or `reject` autonomously. Reject only with a concrete reason such as out of scope, already handled, invalid premise, or intentionally deferred.
 
@@ -374,12 +376,12 @@ Show this table before editing:
 
 Choose `fix_type` for Phase U6:
 
-| fix_type | Use for |
-| --- | --- |
-| `logic` | Code behavior or tests |
+| fix_type      | Use for                                                       |
+| ------------- | ------------------------------------------------------------- |
+| `logic`       | Code behavior or tests                                        |
 | `spec_change` | Public docs, API, workflow, or compatibility record semantics |
-| `trivial` | Typo, formatting, wording-only, or table-shape fix |
-| `none` | No accepted changes |
+| `trivial`     | Typo, formatting, wording-only, or table-shape fix            |
+| `none`        | No accepted changes                                           |
 
 ## Phase 4: Fix And Commit
 
@@ -463,12 +465,12 @@ Track `cycles_done` locally (starts at 0, increments each time a review cycle pr
 
 **Step 2: Determine `need_re_review`** (only when unresolved = 0):
 
-| fix_type from Phase 3 | Accepted `blocking` class? | need_re_review |
-| --- | --- | --- |
-| `none` | — | **no** |
-| `trivial` | — | **no** |
-| `logic` or `spec_change` | any | **yes** |
-| any | at least 1 `blocking` accept | **yes** |
+| fix_type from Phase 3    | Accepted `blocking` class?   | need_re_review |
+| ------------------------ | ---------------------------- | -------------- |
+| `none`                   | —                            | **no**         |
+| `trivial`                | —                            | **no**         |
+| `logic` or `spec_change` | any                          | **yes**        |
+| any                      | at least 1 `blocking` accept | **yes**        |
 
 **Step 3: Route**
 
@@ -477,7 +479,6 @@ Track `cycles_done` locally (starts at 0, increments each time a review cycle pr
 > **Issue #36 clarification**: "never re-review just because cycles_done < max_cycles" applies only
 > when `need_re_review = no`. If `fix_type` is `logic` / `spec_change` or a `blocking` fix was
 > accepted, requesting re-review is legitimate — the Issue #36 override does NOT suppress that.
-
 - `need_re_review = yes` AND `cycles_done ≥ max_cycles` → classify termination and proceed to **Phase 6.5**.
 
 - `need_re_review = yes` AND `cycles_done < max_cycles` → choose re-review approach by `provider`:
@@ -495,10 +496,10 @@ If `cycles_done ≥ max_cycles`: classify termination and proceed to **Phase 6.5
 
 **Termination classification:**
 
-| Classification | Condition | Merge implication |
-| --- | --- | --- |
-| ✅ `READY_TO_MERGE` | unresolved = 0 (any cycle) | Safe — normal merge gate |
-| 🟡 `ESCALATE — Clean` | max cycles AND final cycle has **no** `blocking` accepts | Likely safe — note unverified status |
+| Classification                 | Condition                                                                  | Merge implication                             |
+| ------------------------------ | -------------------------------------------------------------------------- | --------------------------------------------- |
+| ✅ `READY_TO_MERGE`            | unresolved = 0 (any cycle)                                                 | Safe — normal merge gate                      |
+| 🟡 `ESCALATE — Clean`          | max cycles AND final cycle has **no** `blocking` accepts                   | Likely safe — note unverified status          |
 | 🔴 `ESCALATE — Unverified Fix` | max cycles AND final cycle accepted **≥ 1 `blocking` fix** not re-reviewed | Risky — recommend human review of last commit |
 
 Record for Phase 7:
@@ -566,6 +567,7 @@ Post a PR comment through `{GH}:add_issue_comment`:
 ## Review Cycle Summary
 
 ### Route
+
 - Acquisition provider: copilot-review | codex | external | existing | auto
 - Unified thread handling used: yes
 - Completion wait: native subscription | sdk-wrapper subscription | fallback polling | user-signaled | N/A
@@ -576,19 +578,24 @@ Post a PR comment through `{GH}:add_issue_comment`:
 - Reviewer accounts: <login(s) and thread counts>
 
 ### Changes
+
 - ...
 
 ### Decisions
+
 - accept: N
 - reject: M
 
 ### Remaining Items
+
 - None | ...
 
 ### Deferred / Scope-out Items
+
 - None | <list of follow-up issues>
 
 ### Verification
+
 - CI: ...
 - Unresolved threads: ...
 - Cycle status: <termination_status>
@@ -605,6 +612,7 @@ Example for `ESCALATE — Unverified Fix`:
 
 ```markdown
 ### Verification
+
 - CI: ✅
 - Unresolved threads: 0
 - Cycle status: 🔴 ESCALATE — Unverified Fix
@@ -623,6 +631,7 @@ This section MUST list every reject whose reason was `out-of-scope`, `deferred`,
 
 ```markdown
 ### Deferred / Scope-out Items
+
 - #238 — Add tests for file distribution Supabase operations and W6 dialog
 - #239 — Improve accessibility for file distribution status and download buttons
 ```
@@ -633,6 +642,7 @@ If any item was left untracked:
 
 ```markdown
 ### Deferred / Scope-out Items
+
 - Thread <id> — untracked — needs follow-up issue (Phase U5 step 4)
 ```
 

@@ -4,14 +4,14 @@
 
 ## 名称と公開物
 
-| 対象 | 新仕様 |
-|---|---|
-| npm package / bin / help / version | `resource-bridge-cli` |
-| tarball | `resource-bridge-cli-<version>.tgz`（`pnpm pack`） |
-| 配布範囲 | `dist/src/client/`、README、LICENSE |
-| SDK client名 / 新規OAuth DCR client名 | `resource-bridge-cli` |
-| module / 関数 / 型 | `subscriptionClient.js` / `runResourceSubscription` / `ResourceSubscriptionOptions` / `ResourceSubscriptionResult` |
-| GitHub repo / token cache / 環境変数 | 既存のまま |
+| 対象                                  | 新仕様                                                                                                             |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| npm package / bin / help / version    | `resource-bridge-cli`                                                                                              |
+| tarball                               | `resource-bridge-cli-<version>.tgz`（`pnpm pack`）                                                                 |
+| 配布範囲                              | `dist/src/client/`、README、LICENSE                                                                                |
+| SDK client名 / 新規OAuth DCR client名 | `resource-bridge-cli`                                                                                              |
+| module / 関数 / 型                    | `subscriptionClient.js` / `runResourceSubscription` / `ResourceSubscriptionOptions` / `ResourceSubscriptionResult` |
+| GitHub repo / token cache / 環境変数  | 既存のまま                                                                                                         |
 
 旧名のbinやmoduleの互換wrapperは追加しない。新しいpackageを使用するプログラムは新module pathへ移行し、`uri` を明示する。旧公開packageは切替検証が終わるまで維持する。
 
@@ -21,16 +21,16 @@
 
 棚卸し対象はこのrepoのentry・scripts・CI・test・文書、およびローカルのMcp-Docker（`a2b2d5ee6b6448a34346269703a45eef7273a644`）の現行skillとSquirrel（`5922927792ec89689a01af35adaeb4632b41c831`）の実装・テスト。未知の外部利用者の不使用を保証するものではない。
 
-| 対象 | 根拠と扱い |
-|---|---|
+| 対象                                              | 根拠と扱い                                                                                                                                                        |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `scripts/subscribe-client.ts` / `probe:subscribe` | 別の手動probe経路。package.json・README・AGENTS.md・旧skillの入口探索説明にのみ参照があり、CI/test・調査した現行利用先に実行参照はない。公開binと重複するため削除 |
-| test URIの暗黙の既定値 | SquirrelとMcp-Dockerの現行skillはURIを明示している。購読CLIと運用関数の既定値を削除し、fixtureを使うテストはURIを明示 |
-| `probeClient` の運用コード | 公開binから使われているので処理を残し、`subscriptionClient` へ改名 |
-| capabilities / resource-found / 非JSON出力 | repo内テスト・出力契約に参照があり、全外部利用先の不使用は確認できないため維持 |
-| skip-list / logout / 認証 | Squirrelの設定・テストまたは既存の認証運用に必要なので維持 |
-| `src/server/` / Docker / start / dev | 統合・CLIテストとCIが利用。テストfixtureとして維持し、製品案内から区別 |
-| SDK/runtime/依存 | 現行の購読・認証・fixtureで使用するため維持。lockfileやtoolchainを下げない |
-| 互換性結果・旧検証ガイド・旧レビューskill | 初期検証の履歴として維持。現行のレビュー運用指示として使用しない |
+| test URIの暗黙の既定値                            | SquirrelとMcp-Dockerの現行skillはURIを明示している。購読CLIと運用関数の既定値を削除し、fixtureを使うテストはURIを明示                                             |
+| `probeClient` の運用コード                        | 公開binから使われているので処理を残し、`subscriptionClient` へ改名                                                                                                |
+| capabilities / resource-found / 非JSON出力        | repo内テスト・出力契約に参照があり、全外部利用先の不使用は確認できないため維持                                                                                    |
+| skip-list / logout / 認証                         | Squirrelの設定・テストまたは既存の認証運用に必要なので維持                                                                                                        |
+| `src/server/` / Docker / start / dev              | 統合・CLIテストとCIが利用。テストfixtureとして維持し、製品案内から区別                                                                                            |
+| SDK/runtime/依存                                  | 現行の購読・認証・fixtureで使用するため維持。lockfileやtoolchainを下げない                                                                                        |
+| 互換性結果・旧検証ガイド・旧レビューskill         | 初期検証の履歴として維持。現行のレビュー運用指示として使用しない                                                                                                  |
 
 ## 呼び出し契約
 
@@ -67,4 +67,3 @@
 2. **Squirrel Notifier**: `v0.19.0` にて新CLI認識・既定コマンド更新が完了。設定の `SubscriberCommandPath` を `%LOCALAPPDATA%\pnpm\bin\resource-bridge-cli.cmd` 等へ切り替え、子プロセスによるキュー購読（`queue://review/queue` および `queue://review/re-review-requests`）が正常稼働することを確認済み。
 3. **別環境への適用**: 手順・退避・整合確認は[移行ガイドブック](guidebook/resource-bridge-cli-migration.md)に整理され、Node `>=26.10.0` の確保と新CLI導入、設定退避、常駐起動確認の一連の手順が確立されている。
 4. **実運用評価**: 実PRでのレビューサイクル（独立reviewer起動、同一セッションでの新CLI結果受信、未解決スレッド取得）を順次実施し、配送の安定性を確認する。
-

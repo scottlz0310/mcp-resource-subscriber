@@ -132,4 +132,3 @@ The wrapper must:
 5. `recommended_next_action=POLL_AFTER` の場合は subscription を維持し、次の通知を待つ。
 6. 非 `POLL_AFTER` action、timeout、error のいずれかに到達してから parsed `recommended_next_action` を返す。
 7. Unsubscribe/close on completion or timeout.
-
