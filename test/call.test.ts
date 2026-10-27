@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -45,6 +45,32 @@ async function runCli(args: string[], env: Record<string, string | undefined> = 
   }
 }
 
+async function runCliWithInput(args: string[], input: string | null): Promise<ExecResult> {
+  const child = spawn("node", ["--import", "tsx/esm", CLI_SRC, "call", ...args], {
+    env: {
+      ...process.env,
+      MCP_PROBE_TOKEN_STORE_PATH: join(tmpdir(), "mrs-call-test-absent", "tokens.db"),
+      MCP_PROBE_AUTH_TOKEN: undefined,
+      MCP_PROBE_TIMEOUT_MS: undefined,
+      MCP_PROBE_URL: undefined,
+    },
+  });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
+    stdout += chunk;
+  });
+  child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+    stderr += chunk;
+  });
+  child.stdin.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code !== "EPIPE") throw error;
+  });
+  if (input !== null) child.stdin.end(input);
+  const [exitCode] = (await once(child, "close")) as [number];
+  return { stdout, stderr, exitCode };
+}
+
 async function startTestServer(): Promise<{ url: string; close: () => Promise<void> }> {
   const { app, close: closeHandler } = createMcpHttpApp(
     {
@@ -83,6 +109,43 @@ async function getClosedPortUrl(): Promise<string> {
 }
 
 describe("call subcommand: argument parsing", () => {
+  it("標準入力の JSON を tool に渡す", async () => {
+    const { url, close } = await startTestServer();
+    try {
+      const result = await runCliWithInput(
+        ["--url", url, "--tool", "echo_tool", "--args-stdin", "--json"],
+        '{"message":"hello"}',
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("hello");
+    } finally {
+      await close();
+    }
+  });
+
+  it.each([
+    ["不正な JSON", [], "private-invalid-json"],
+    ["配列", [], "[]"],
+    ["引数の重複", ["--args", "{}"], "{}"],
+    ["サイズ超過", [], "a".repeat(1024 * 1024 + 1)],
+  ])("標準入力の%sを拒否する", async (_name, extra, input) => {
+    const result = await runCliWithInput(
+      ["--url", "http://127.0.0.1:1/mcp", "--tool", "echo_tool", "--args-stdin", "--json", ...extra],
+      input,
+    );
+    expect(result.exitCode).toBe(3);
+    expect((JSON.parse(result.stdout) as CallJsonOutput).errorCode).toBe("INVALID_ARGS");
+    expect(result.stderr).not.toContain("private-invalid-json");
+  });
+
+  it("標準入力が閉じられなければ timeout で失敗する", async () => {
+    const result = await runCliWithInput(
+      ["--url", "http://127.0.0.1:1/mcp", "--tool", "echo_tool", "--args-stdin", "--json", "--timeout-ms", "100"],
+      null,
+    );
+    expect(result.exitCode).toBe(3);
+    expect((JSON.parse(result.stdout) as CallJsonOutput).errorCode).toBe("INVALID_ARGS");
+  });
   it("missing --url fails with SERVER_URL_UNKNOWN, exit code 3", async () => {
     const result = await runCli(["--tool", "echo_tool", "--json"]);
 
