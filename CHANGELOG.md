@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-27
+
 ### Added
 
 - `call --args-stdin` で tool 引数の JSON object を標準入力から渡せるようにした。Windows のシェル shim を通す場合にも引用符を引数に含めずに呼び出せる。
@@ -284,7 +286,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `src/server/mcpServer.ts` contains a hardcoded version string (bundled test server, not part of the published npm package). This must be updated manually on each version bump. `src/client/probeClient.ts` / `src/client/callClient.ts` resolve their version dynamically from `package.json` as of v0.5.0 and no longer need manual updates.
 
-[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.6.0...v0.6.1
