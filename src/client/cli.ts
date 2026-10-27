@@ -77,7 +77,7 @@ MCP resource の購読・結果配送と単発 tool 呼び出しを行う CLI �
 使い方:
   resource-bridge-cli --url <server-url> --uri <resource-uri> [--timeout-ms <ms>] [--json]
   resource-bridge-cli --url <server-url> --uri <resource-uri> --jsonl --until <pointer>=<json> [--timeout-ms <ms>]
-  resource-bridge-cli call --url <server-url> --tool <name> [--args <json>] [--json]
+  resource-bridge-cli call --url <server-url> --tool <name> [--args <json> | --args-stdin] [--json]
   resource-bridge-cli watch-review-status --key <owner/repo#N> --after <ISO8601> [--file <path>]
   resource-bridge-cli --login --url <gateway-mcp-url>
   resource-bridge-cli --logout --url <gateway-mcp-url>
@@ -107,6 +107,7 @@ MCP resource の購読・結果配送と単発 tool 呼び出しを行う CLI �
 call オプション:
   --tool <name>      必須。呼び出す MCP tool 名。
   --args <json>      tool 引数の JSON object。既定: {}
+  --args-stdin       tool 引数の JSON object を標準入力から読み取ります（最大 1 MiB）。--args と併用できません。
   終了コード: 成功 0 / tool エラー 1 / 認証エラー 2 / 通信・引数エラー 3
 
 watch-review-status オプション（同じ PC の Squirrel Notifier の review-status.json を監視。MCP 接続なし）:
@@ -372,16 +373,25 @@ async function runCallCommand(): Promise<void> {
     return;
   }
 
+  let argsDiagnostic = "--args の指定を確認してください";
   try {
-    const argsRaw = readOption("args") ?? "{}";
+    const argsOption = readOption("args");
+    const useStdin = args.includes("--args-stdin");
+    if (useStdin && argsOption !== undefined) {
+      argsDiagnostic = "--args と --args-stdin は併用できません";
+      throw new Error("--args and --args-stdin cannot be combined");
+    }
+    if (useStdin) argsDiagnostic = "標準入力の読み取りに失敗しました（EOF、1 MiB 上限、timeout を確認してください）";
+    const argsRaw = useStdin ? await readCallArgsFromStdin(timeoutMs) : (argsOption ?? "{}");
+    argsDiagnostic = "tool 引数は JSON object で指定してください";
     const parsed: unknown = JSON.parse(argsRaw);
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
       throw new Error("--args must be a JSON object");
     }
     toolArgs = parsed as Record<string, unknown>;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`call failed: invalid --args: ${message}`);
+  } catch {
+    // JSON.parse の例外には入力値が含まれる場合があるため、入力内容を診断へ出さない。
+    console.error(`call failed: ${argsDiagnostic}`);
     emitError("INVALID_ARGS", 3, url, tool);
     return;
   }
@@ -462,6 +472,25 @@ async function runCallCommand(): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`call failed: ${message}`);
     emitError(errorCode, exitCode, url, tool, recommendedNextAction);
+  }
+}
+
+async function readCallArgsFromStdin(timeoutMs: number): Promise<string> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  const timer = setTimeout(() => process.stdin.destroy(new Error("stdin timeout")), timeoutMs);
+  try {
+    for await (const chunk of process.stdin) {
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += bytes.length;
+      if (size > 1024 * 1024) {
+        throw new Error("stdin is too large");
+      }
+      chunks.push(bytes);
+    }
+    return Buffer.concat(chunks).toString("utf8");
+  } finally {
+    clearTimeout(timer);
   }
 }
 

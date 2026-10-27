@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `call --args-stdin` で tool 引数の JSON object を標準入力から渡せるようにした。Windows のシェル shim を通す場合にも引用符を引数に含めずに呼び出せる。
+
 ### Changed
 
 - Biome を 2.6.3 へ更新して設定を移行し、Markdown・YAML を新しい整形に合わせた。lefthook の対象を biome.json とそろえ、pre-push で全体の lint・型検査・build・coverage テストを実行する。

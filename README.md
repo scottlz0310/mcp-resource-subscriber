@@ -186,7 +186,7 @@ resource-bridge-cli call \
   --json
 ```
 
-`call` は `initialize` → `tools/call` → 結果出力で終了します。`--uri` は不要です。`--args` はJSON objectで、既定は `{}`。認証・URL・timeoutは購読と共通です。
+`call` は `initialize` → `tools/call` → 結果出力で終了します。`--uri` は不要です。`--args` はJSON objectで、既定は `{}`。`--args-stdin` を指定すると標準入力から JSON object を読み取ります（最大1 MiB、EOF が必要、`--args` とは併用不可）。標準入力の待機には `--timeout-ms` を別途適用し、その後の認証・通信には同じ値の予算を新たに適用します。認証・URL・timeoutの指定方法は購読と共通です。
 
 | 終了コード | 意味                                                                             |
 | ---------- | -------------------------------------------------------------------------------- |
