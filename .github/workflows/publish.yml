@@ -4,6 +4,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      recovery_tag:
+        description: "復旧する draft のタグ（通常の検証では空欄）"
+        required: false
+        type: string
+      recovery_sha:
+        description: "復旧対象タグのコミット SHA（通常の検証では空欄）"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -14,7 +23,7 @@ concurrency:
 
 jobs:
   dry-run:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.recovery_tag == '' && inputs.recovery_sha == ''
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -40,9 +49,40 @@ jobs:
     with:
       draft: true
 
-  publish:
+  resolve:
     needs: draft
-    if: needs.draft.outputs.release_state == 'draft'
+    if: always() && (needs.draft.result == 'success' || (github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && (inputs.recovery_tag != '' || inputs.recovery_sha != '')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag_name: ${{ steps.select.outputs.tag_name }}
+      target_sha: ${{ steps.select.outputs.target_sha }}
+      release_state: ${{ steps.select.outputs.release_state }}
+    steps:
+      - uses: actions/checkout@v7
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          fetch-depth: 0
+      - id: select
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          REF_PROTECTED: ${{ github.ref_protected }}
+          TAG: ${{ inputs.recovery_tag || needs.draft.outputs.tag_name }}
+          TARGET_SHA: ${{ inputs.recovery_sha || needs.draft.outputs.target_sha }}
+          RELEASE_STATE: ${{ needs.draft.outputs.release_state }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == 'workflow_dispatch' ]]; then
+            bash scripts/validate-release-recovery.sh
+            RELEASE_STATE=draft
+          fi
+          printf 'tag_name=%s\ntarget_sha=%s\nrelease_state=%s\n' "$TAG" "$TARGET_SHA" "$RELEASE_STATE" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: resolve
+    if: needs.resolve.outputs.release_state == 'draft'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -51,7 +91,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.draft.outputs.target_sha }}
+          ref: ${{ needs.resolve.outputs.target_sha }}
       - uses: pnpm/action-setup@v6
         with:
           run_install: false
@@ -66,7 +106,7 @@ jobs:
       - run: pnpm test
       - name: 配布 tarball と CLI の版を検証
         env:
-          TAG: ${{ needs.draft.outputs.tag_name }}
+          TAG: ${{ needs.resolve.outputs.tag_name }}
         run: |
           set -euo pipefail
           test "$(node -p "require('./package.json').version")" = "${TAG#v}"
@@ -90,16 +130,19 @@ jobs:
           if-no-files-found: error
       - name: 同じ workflow から OIDC で npm 公開
         env:
-          TAG: ${{ needs.draft.outputs.tag_name }}
+          TAG: ${{ needs.resolve.outputs.tag_name }}
         run: |
           set -euo pipefail
           version=${TAG#v}
           args=(--provenance --access public)
           if [[ "${version%%+*}" == *-* ]]; then args+=(--tag next); fi
-          npm publish package-output/*.tgz "${args[@]}"
+          packages=(./package-output/*.tgz)
+          test "${#packages[@]}" = 1
+          test -f "${packages[0]}"
+          npm publish "${packages[0]}" "${args[@]}"
 
   verify-package:
-    needs: [draft, publish]
+    needs: [resolve, publish]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -112,7 +155,7 @@ jobs:
           path: expected
       - name: 公開 tarball の一致と provenance の存在を確認
         env:
-          TAG: ${{ needs.draft.outputs.tag_name }}
+          TAG: ${{ needs.resolve.outputs.tag_name }}
         run: |
           set -euo pipefail
           timeout 60 npm view "resource-bridge-cli@${TAG#v}" --json > metadata.json
@@ -124,12 +167,13 @@ jobs:
           cmp "${packages[0]}" registry.tgz
 
   finalize:
-    needs: [draft, publish, verify-package]
+    needs: [resolve, publish, verify-package]
     uses: scottlz0310/release-automate/.github/workflows/reusable-finalize-release.yml@7f53bc1716dc7da1740be166e55b5d94b33041e6 # v3.2.0
     permissions:
       contents: write
     with:
-      tag_name: ${{ needs.draft.outputs.tag_name }}
-      target_sha: ${{ needs.draft.outputs.target_sha }}
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target_sha: ${{ needs.resolve.outputs.target_sha }}
+      resume: ${{ github.event_name == 'workflow_dispatch' }}
       append_release_evidence: true
       verification_results: ${{ toJSON(needs) }}

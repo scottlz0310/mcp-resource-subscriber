@@ -18,7 +18,9 @@ prepare / publish / finalize は release-automate の同じ固定 SHA を使う�
 7. 検証成功後だけ GitHub Release を finalize し、共通書式で対象 SHA・run・依存ジョブの成功を追記する。
    原稿は CHANGELOG で、自動生成の What's Changed は併記しない。
 
-`Publish` の手動実行は build/test のみで、公開しない。通常の導入 PR のマージでも公開しない。
+`Publish` の手動実行は、回復用入力を指定しなければ build/test のみで公開しない。通常の導入 PR のマージでも公開しない。
+
+公開コマンド失敗後の復旧では、まず npm の対象版が未公開であることと GitHub Release が draft であることを確認する。利用者が対象版の公開を許可した後、既定ブランチから `Publish` を手動実行し、`recovery_tag` にタグ（例: `v0.9.0`）、`recovery_sha` にそのタグの40桁コミット SHA を指定する。両方が空の場合は従来どおり非公開の検証だけを行う。回復時は draft・タグと SHA・既定ブランチ履歴・npm 未公開を確認してから、対象 SHA のビルド、同じ workflow からの OIDC 公開、tarball 再取得・比較、provenance の存在確認、finalize を行う。registry エラー、既公開、SHA 不一致は停止する。タグの付け替えや別版の自動採番は行わない。
 prepare は Organization の RELEASE_BOT_CLIENT_ID/PRIVATE_KEY、GitHub Release は GITHUB_TOKEN、
 npm は従来の id-token: write を使う。
 
