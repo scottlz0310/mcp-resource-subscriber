@@ -51,6 +51,9 @@ jobs:
 
   resolve:
     needs: draft
+    # GitHub の draft 参照には push 権限が必要。
+    permissions:
+      contents: write
     if: always() && (needs.draft.result == 'success' || (github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && (inputs.recovery_tag != '' || inputs.recovery_sha != '')))
     runs-on: ubuntu-latest
     timeout-minutes: 5
