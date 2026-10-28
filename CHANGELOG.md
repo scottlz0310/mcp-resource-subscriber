@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- npm 公開時の tarball パスを修正し、未公開の draft release を同じタグとコミットで回復できるようにした。
+
 ## [0.9.0] - 2026-10-27
 
 ### Added
