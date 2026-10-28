@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- 公開回復の事前検証に draft 参照用の権限を設定した。
+
 - npm 公開時の tarball パスを修正し、未公開の draft release を同じタグとコミットで回復できるようにした。
 
 ## [0.9.0] - 2026-10-27
