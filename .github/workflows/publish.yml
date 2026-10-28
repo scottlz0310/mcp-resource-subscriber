@@ -85,7 +85,7 @@ jobs:
 
   publish:
     needs: resolve
-    if: needs.resolve.outputs.release_state == 'draft'
+    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.resolve.outputs.release_state == 'draft' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -146,6 +146,7 @@ jobs:
 
   verify-package:
     needs: [resolve, publish]
+    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.publish.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -171,6 +172,7 @@ jobs:
 
   finalize:
     needs: [resolve, publish, verify-package]
+    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.publish.result == 'success' && needs.verify-package.result == 'success' }}
     uses: scottlz0310/release-automate/.github/workflows/reusable-finalize-release.yml@7f53bc1716dc7da1740be166e55b5d94b33041e6 # v3.2.0
     permissions:
       contents: write
