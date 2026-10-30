@@ -12,7 +12,7 @@
   ],
   "homepage": "https://github.com/scottlz0310/mcp-resource-subscriber",
   "type": "module",
-  "packageManager": "pnpm@12.15.0",
+  "packageManager": "pnpm@12.16.1",
   "license": "MIT",
   "bin": {
     "resource-bridge-cli": "dist/src/client/cli.js"
