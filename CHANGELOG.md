@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-31
+
 ### Added
 
 - watch-review-statusがSquirrelの省略可能なautoPause詳細（agent/枠・使用率・閾値・観測/リセット時刻）を型検証して状態行へ渡すようにした。同じ保留理由でも根拠更新を配送する。省略時は値を補わず、不正な既知詳細は観測不能として扱う。待機の終了条件・終了コードは変えない。
@@ -303,7 +305,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `src/server/mcpServer.ts` contains a hardcoded version string (bundled test server, not part of the published npm package). This must be updated manually on each version bump. `src/client/probeClient.ts` / `src/client/callClient.ts` resolve their version dynamically from `package.json` as of v0.5.0 and no longer need manual updates.
 
-[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/scottlz0310/mcp-resource-subscriber/compare/v0.6.1...v0.7.0
