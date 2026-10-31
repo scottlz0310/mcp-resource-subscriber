@@ -46,6 +46,16 @@ export function preciseTimeToMs(time: PreciseTime): number {
   return time.seconds * 1000 + Number(time.fraction.slice(0, 3));
 }
 
+/** 停止判定に使った観測値。resetAtは解除の保証ではない。 */
+export interface ReviewAutoPauseInfo {
+  agentId: string;
+  limitId: string;
+  usedPercentage: number;
+  thresholdPercentage: number;
+  observedAt: string;
+  resetAt?: string;
+}
+
 export interface ReviewStatusEntry {
   key: string;
   state: string;
@@ -56,6 +66,7 @@ export interface ReviewStatusEntry {
   queuePosition?: number;
   outcome?: string;
   exitCode?: number;
+  autoPause?: ReviewAutoPauseInfo;
 }
 
 export interface ReviewStatusDocument {
@@ -74,6 +85,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function parseAutoPauseInfo(value: unknown): ReviewAutoPauseInfo | null {
+  if (
+    !isRecord(value) ||
+    typeof value.agentId !== "string" ||
+    value.agentId.length === 0 ||
+    typeof value.limitId !== "string" ||
+    value.limitId.length === 0 ||
+    typeof value.usedPercentage !== "number" ||
+    !Number.isFinite(value.usedPercentage) ||
+    typeof value.thresholdPercentage !== "number" ||
+    !Number.isFinite(value.thresholdPercentage) ||
+    typeof value.observedAt !== "string" ||
+    parsePreciseTime(value.observedAt) === null ||
+    (value.resetAt !== undefined && parsePreciseTime(value.resetAt) === null)
+  ) {
+    return null;
+  }
+  return {
+    agentId: value.agentId,
+    limitId: value.limitId,
+    usedPercentage: value.usedPercentage,
+    thresholdPercentage: value.thresholdPercentage,
+    observedAt: value.observedAt,
+    ...(typeof value.resetAt === "string" ? { resetAt: value.resetAt } : {}),
+  };
+}
+
 function toEntry(value: unknown): ReviewStatusEntry | null {
   if (!isRecord(value)) {
     return null;
@@ -89,6 +127,10 @@ function toEntry(value: unknown): ReviewStatusEntry | null {
   if (typeof value.queuePosition === "number") entry.queuePosition = value.queuePosition;
   if (typeof value.outcome === "string") entry.outcome = value.outcome;
   if (typeof value.exitCode === "number") entry.exitCode = value.exitCode;
+  if (state === "waiting" && entry.holdReason === "autoPause" && value.autoPause !== undefined) {
+    const details = parseAutoPauseInfo(value.autoPause);
+    if (details !== null) entry.autoPause = details;
+  }
   return entry;
 }
 
@@ -116,6 +158,23 @@ export function parseStatusDocument(text: string): ParsedStatusDocument {
   if (raw.schemaVersion !== SUPPORTED_STATUS_SCHEMA_VERSION) {
     return { kind: "unsupported_schema", schemaVersion: raw.schemaVersion };
   }
+  // 省略は旧版でも合法だが、既知の詳細が不正なときは観測値として採用しない。
+  if (
+    [raw.items, raw.recent].some(
+      (items) =>
+        Array.isArray(items) &&
+        items.some(
+          (entry) =>
+            isRecord(entry) &&
+            entry.state === "waiting" &&
+            entry.holdReason === "autoPause" &&
+            entry.autoPause !== undefined &&
+            parseAutoPauseInfo(entry.autoPause) === null,
+        ),
+    )
+  ) {
+    return { kind: "invalid" };
+  }
   return {
     kind: "ok",
     document: {
@@ -136,6 +195,7 @@ export type Observation =
       round: number | null;
       eventId: string | null;
       queuePosition: number | null;
+      autoPause?: ReviewAutoPauseInfo;
     }
   | {
       kind: "finished";
@@ -178,6 +238,7 @@ export function observe(document: ReviewStatusDocument, key: string, after: Prec
       round: active.round ?? null,
       eventId: active.eventId ?? null,
       queuePosition: active.queuePosition ?? null,
+      ...(active.autoPause ? { autoPause: active.autoPause } : {}),
     };
   }
   const finished = latestAfter(document.recent, normalizedKey, after);
@@ -198,7 +259,7 @@ export function observe(document: ReviewStatusDocument, key: string, after: Prec
 }
 
 /** 状態の短い日本語の説明（LLM と人が、行だけで読めるようにする）。 */
-export function describeState(state: string, holdReason: string | null): string {
+export function describeState(state: string, holdReason: string | null, autoPause?: ReviewAutoPauseInfo): string {
   if (state === "waiting") {
     switch (holdReason) {
       case "ciPending":
@@ -208,7 +269,9 @@ export function describeState(state: string, holdReason: string | null): string 
       case "manual":
         return "利用者の操作待ち(自動起動off)";
       case "autoPause":
-        return "自動起動が一時停止中";
+        return autoPause
+          ? `Auto-Pause: ${autoPause.agentId}/${autoPause.limitId} 使用率${autoPause.usedPercentage}%（閾値${autoPause.thresholdPercentage}%）、リセット予定${autoPause.resetAt ?? "不明"}。解除には最新使用率の確認が必要`
+          : "自動起動が一時停止中";
       default:
         return "起動待ち(評価中)";
     }

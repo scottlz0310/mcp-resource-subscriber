@@ -11,6 +11,96 @@ import {
 
 const KEY = "scottlz0310/review-raven#158";
 
+const AUTO_PAUSE = {
+  agentId: "agy",
+  limitId: "3p-weekly",
+  usedPercentage: 96,
+  thresholdPercentage: 95,
+  observedAt: "2026-10-25T10:00:00Z",
+  resetAt: "2026-10-25T10:10:00Z",
+};
+
+describe("Auto-Pause詳細の公開契約", () => {
+  function parseDetails(details: unknown, overrides: object = {}) {
+    return parseStatusDocument(
+      JSON.stringify({
+        schemaVersion: 1,
+        updatedAt: "2026-10-25T10:00:10Z",
+        items: [
+          {
+            key: KEY,
+            state: "waiting",
+            receivedAt: "2026-10-25T10:00:00Z",
+            holdReason: "autoPause",
+            autoPause: details,
+            ...overrides,
+          },
+        ],
+        recent: [],
+      }),
+    );
+  }
+
+  it.each([true, false])("リセット予定の有無=%sを保ち、未知項目は公開しない", (hasReset) => {
+    const { resetAt, ...required } = AUTO_PAUSE;
+    const expected = hasReset ? AUTO_PAUSE : required;
+    const parsed = parseDetails({ ...expected, privatePath: "非公開の値" });
+    expect(parsed.kind).toBe("ok");
+    if (parsed.kind === "ok") {
+      expect(parsed.document.items[0].autoPause).toEqual(expected);
+    }
+    expect(JSON.stringify(parsed)).not.toContain("非公開の値");
+  });
+
+  it("旧版の詳細省略を維持し、使用率0やリセット時刻を補わない", () => {
+    const parsed = parseDetails(undefined);
+    expect(parsed.kind === "ok" && parsed.document.items[0].autoPause).toBeUndefined();
+  });
+
+  it.each([
+    null,
+    { ...AUTO_PAUSE, agentId: 123 },
+    { ...AUTO_PAUSE, agentId: "" },
+    { ...AUTO_PAUSE, limitId: null },
+    { ...AUTO_PAUSE, limitId: "" },
+    { ...AUTO_PAUSE, usedPercentage: "96" },
+    { ...AUTO_PAUSE, thresholdPercentage: null },
+    { ...AUTO_PAUSE, observedAt: 123 },
+    { ...AUTO_PAUSE, observedAt: "不明" },
+    { ...AUTO_PAUSE, resetAt: "不明" },
+  ])("不正な既知の詳細は文書を観測不能にする: %j", (details) => {
+    expect(parseDetails(details)).toEqual({ kind: "invalid" });
+  });
+
+  it.each(["usedPercentage", "thresholdPercentage"])("%sが有限でないときは拒否する", (field) => {
+    const raw = JSON.stringify({
+      schemaVersion: 1,
+      updatedAt: "2026-10-25T10:00:10Z",
+      items: [entry({ holdReason: "autoPause", autoPause: AUTO_PAUSE })],
+    });
+    const invalid = raw.replace(
+      `"${field}":${AUTO_PAUSE[field as "usedPercentage" | "thresholdPercentage"]}`,
+      `"${field}":1e999`,
+    );
+    expect(parseStatusDocument(invalid)).toEqual({ kind: "invalid" });
+  });
+
+  it.each([{ state: "running" }, { holdReason: "busy" }, { holdReason: "manual" }])(
+    "Auto-Pause以外に詳細を流さない: %j",
+    (overrides) => {
+      const parsed = parseDetails(AUTO_PAUSE, overrides);
+      expect(parsed.kind === "ok" && parsed.document.items[0].autoPause).toBeUndefined();
+    },
+  );
+
+  it("選択した観測と説明へ同じ詳細を渡す", () => {
+    const paused = entry({ holdReason: "autoPause", autoPause: AUTO_PAUSE });
+    const observed = observe(document([paused]), KEY, time("2026-10-25T09:59:59Z"));
+    expect(observed).toMatchObject({ kind: "active", autoPause: AUTO_PAUSE });
+    expect(describeState("waiting", "autoPause", AUTO_PAUSE)).toContain(AUTO_PAUSE.resetAt);
+  });
+});
+
 function time(value: string) {
   const parsed = parsePreciseTime(value);
   if (parsed === null) {

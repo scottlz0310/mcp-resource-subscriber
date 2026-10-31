@@ -184,7 +184,8 @@ export async function runStatusWatch(options: StatusWatchOptions, deps: StatusWa
       holdReason: observation.holdReason,
       round: observation.round,
       queuePosition: observation.queuePosition,
-      detail: describeState(observation.state, observation.holdReason),
+      ...(observation.autoPause ? { autoPause: observation.autoPause } : {}),
+      detail: describeState(observation.state, observation.holdReason, observation.autoPause),
     });
     if (observation.state === "waiting" && observation.holdReason === "manual") {
       emit("action_required", { detail: "Squirrelの「レビューする」か、別CLIでreviewerを起動してください" }, true);

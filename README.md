@@ -261,3 +261,9 @@ node dist/src/client/cli.js --url http://127.0.0.1:8089/mcp --uri test://review/
 | `MCP_TEST_SEND_LIST_CHANGED` / `MCP_TEST_LOG_LEVEL`   | `false` / `debug`                    |
 
 過去の互換性検証結果は [results/](results/) に保持します。[検証ガイド](docs/verification-guide-v2.md)と [旧レビューskillテンプレート](docs/skills/pr-review-subscribe/SKILL.md)は初期検証の履歴です。現行のレビュー運用skillはMcp-Dockerが管理します。protocol移行の履歴・責務は [protocol-migration.md](docs/protocol-migration.md)を参照してください。
+
+### Auto-Pauseの詳細の受け取り
+
+対応するSquirrelが公開するreview-status.jsonのwaiting/holdReason=autoPauseに、autoPause詳細があれば、watch-review-statusは同じ名前のobjectをstate行へ渡します。agentId/limitId・usedPercentage/thresholdPercentage・observedAt・省略可能なresetAtだけを配送し、未知項目を転送しません。同じ保留理由でも根拠が更新されれば新しいstate行を出します。
+
+旧版の省略は有効で、使用率0や解除時刻を推測して補いません。既知の詳細が不正なら文書は観測不能となります。resetAtはリセット予定であり、実際の解除にはSquirrelによるfreshな使用率の確認が必要です。公開schema/行schemaはいずれも1、既存の引数・manualの終了条件・終了コードは維持します。Auto-Pauseで待機を続けるかは呼出側が判断します。
