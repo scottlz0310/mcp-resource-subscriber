@@ -157,6 +157,32 @@ function errorWithCode(code: string): NodeJS.ErrnoException {
 }
 
 describe("runStatusWatch: 通常の経過", () => {
+  it("保留理由が同じでも根拠の更新を配送し、実行中と終了へ持ち越さない", async () => {
+    const pause = {
+      agentId: "agy",
+      limitId: "3p-weekly",
+      usedPercentage: 96,
+      thresholdPercentage: 95,
+      observedAt: new Date(START_MS).toISOString(),
+      resetAt: new Date(START_MS + 600_000).toISOString(),
+    };
+    const result = await run((elapsed, now) => {
+      if (elapsed < 1_000) return doc(now, [waiting("autoPause", { autoPause: pause })]);
+      if (elapsed < 2_000) return doc(now, [waiting("autoPause", { autoPause: { ...pause, usedPercentage: 98 } })]);
+      if (elapsed < 3_000) return doc(now, [{ ...running, autoPause: pause }]);
+      return doc(now, [], [{ ...finished("completed", 0), autoPause: pause }]);
+    });
+    expect(result.exitCode).toBe(STATUS_WATCH_EXIT.finishedCompleted);
+    const states = result.lines.filter((line) => line.type === "state");
+    expect(states.map((line) => line.autoPause)).toEqual([
+      pause,
+      { ...pause, usedPercentage: 98 },
+      undefined,
+      undefined,
+    ]);
+    expect(states.map((line) => line.state)).toEqual(["waiting", "waiting", "running", "finished"]);
+  });
+
   it("受信前 → CI 待ち → 行列待ち → 実行中 → 終了を、状態の変化ごとに 1 行だけ出す", async () => {
     // updatedAt は毎回変わる（Squirrel の 60 秒ごとの更新）が、状態が同じなら出力しない
     const result = await run(
