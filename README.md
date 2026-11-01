@@ -118,8 +118,10 @@ phase-summary route=subscription url=<url> uri=<uri>
 
 途中の更新を呼び出し元へ都度渡したい場合に使うopt-inの出力です。既存の `--json`（終了時の単一JSON）と行形式は変わりません。
 
+接続先が`terminal: true`を終端として定義する場合の例です。URL・URI・条件は接続先の公開契約に合わせて指定します。廃止したreview-ravenの内部連携用resourceは使いません。
+
 ```bash
-resource-bridge-cli   --url https://gateway.example/mcp/review-raven   --uri review-raven://requests/<cycleId>   --jsonl --until /terminal=true   --timeout-ms 1200000
+resource-bridge-cli --url <server-url> --uri <resource-uri> --jsonl --until /terminal=true --timeout-ms 1200000
 ```
 
 stdoutに1行1JSONを、受信の都度flushして出力します。診断・警告はstderr。各行は `schemaVersion: 1` を持ち、既存の版の項目は変更しません。
