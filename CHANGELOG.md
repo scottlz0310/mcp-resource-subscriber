@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 廃案となった認証付き内部連携のreview-raven resourceを購読例から外し、接続先の公開契約に従う汎用例へ修正した。CLIの通信・認証・待機契約は変更しない。
 
+### Changed
+
+- `renovate.json` の `extends` から、中央プリセットで解除済みの非推奨プリセット（`options/automerge`・`options/schedule`・`options/security`）への参照を削除した。スケジュール・待機期間・自動マージ等は中央側で既に解除されているため更新の挙動は変わらず、Dependency Dashboard の警告表示が消える。
+
 ## [0.10.0] - 2026-10-31
 
 ### Added
