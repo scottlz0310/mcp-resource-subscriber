@@ -399,6 +399,7 @@ Do not revert unrelated user changes.
 For every reviewed thread:
 
 **Reply** using `{GH}:add_reply_to_pull_request_comment` (map to the actual operation name via `references/tool-template.md` — e.g. `reply_to_review_comment` in some MCP servers):
+
 - `owner`, `repo`, `pull_number`: as determined in Phase 0
 - `comment_id`: the root comment's `databaseId` from Phase U2
 - `body`: reply text (see reject sub-rules below)
@@ -488,6 +489,7 @@ Track `cycles_done` locally (starts at 0, increments each time a review cycle pr
 ### Structured re-review (copilot-review)
 
 If `cycles_done < max_cycles`:
+
 1. Call `{CRM}:request_copilot_review`.
 2. Increment `cycles_done`.
 3. Return to **Phase 1S**.
@@ -503,6 +505,7 @@ If `cycles_done ≥ max_cycles`: classify termination and proceed to **Phase 6.5
 | 🔴 `ESCALATE — Unverified Fix` | max cycles AND final cycle accepted **≥ 1 `blocking` fix** not re-reviewed | Risky — recommend human review of last commit |
 
 Record for Phase 7:
+
 - `termination_status`
 - `final_cycle_fix_types`: counts of `blocking` / `non-blocking` / `suggestion` / `trivial` accepts
 - `unverified_blocking_commits`: commit SHAs when classification is `ESCALATE — Unverified Fix`
@@ -520,6 +523,7 @@ Post a re-review request comment via `{GH}:add_issue_comment`.
 
 The previously reported review threads have been addressed and resolved.
 Please re-review the latest commit, focusing on:
+
 - [summary of accepted fixes]
 ```
 
@@ -529,6 +533,7 @@ Please re-review the latest commit, focusing on:
 @<reviewer> レビュー指摘への対応が完了しました。
 
 再レビューでは以下を中心に確認してください。
+
 - [accepted fix summary]
 ```
 
