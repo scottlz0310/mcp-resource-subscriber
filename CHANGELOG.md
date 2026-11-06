@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Biome 2.6.5のフォーマット結果に合わせ、CHANGELOGとレビュー購読skill文書を整形した。
+
 ### Documentation
 
 - 複数repoをまたぐ別PC移行ガイドをreviewers-forestの正本へ統合し、旧pathの案内とCLI固有の仕様を維持する。
@@ -24,7 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - watch-review-statusがSquirrelの省略可能なautoPause詳細（agent/枠・使用率・閾値・観測/リセット時刻）を型検証して状態行へ渡すようにした。同じ保留理由でも根拠更新を配送する。省略時は値を補わず、不正な既知詳細は観測不能として扱う。待機の終了条件・終了コードは変えない。
-
 
 ### Changed
 
